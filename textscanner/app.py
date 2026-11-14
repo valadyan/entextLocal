@@ -8,11 +8,15 @@ from tkinter import filedialog, messagebox, ttk
 from .documents import FILE_TYPES, WORD_CHAR_RE, extract_text_from_file
 from .library import WordLibrary
 from .storage import (
+    DEFAULT_DICTIONARY,
     STATE_FILE,
+    available_dictionaries,
     load_state,
     load_translations,
+    lookup_translation,
     read_word_table,
     save_state,
+    short_translation,
     write_word_table,
 )
 from .theme import DARK, LIGHT
@@ -58,7 +62,25 @@ class App(tk.Tk):
         self.library = WordLibrary(
             self._state.get("dictionary", {}), self._state.get("learned", [])
         )
-        self.translations, translation_error = load_translations()
+        self.dictionaries = available_dictionaries()
+        self.dictionary_labels = {label: name for name, label in self.dictionaries}
+        dictionary_names = {name for name, label in self.dictionaries}
+        selected_dictionary = self._state.get(
+            "translation_dictionary", DEFAULT_DICTIONARY
+        )
+        if not isinstance(selected_dictionary, str) or selected_dictionary not in dictionary_names:
+            selected_dictionary = (
+                DEFAULT_DICTIONARY if DEFAULT_DICTIONARY in dictionary_names
+                else self.dictionaries[0][0] if self.dictionaries else ""
+            )
+        self.dictionary_name = selected_dictionary
+        if selected_dictionary:
+            self.full_translations, translation_error = load_translations(selected_dictionary)
+        else:
+            self.full_translations = {}
+            translation_error = 'No valid dictionaries found in "dicts".'
+        self.translations = {}
+        self._translation_cache = {}
         self.theme_name = self._state.get("theme", "light")
         if self.theme_name not in ("light", "dark"):
             self.theme_name = "light"
@@ -82,6 +104,10 @@ class App(tk.Tk):
         self.last_occurrence = 0
         self._source_dirty = False
 
+        dictionary_label = next(
+            (label for name, label in self.dictionaries if name == self.dictionary_name), ""
+        )
+        self.dictionary_var = tk.StringVar(value=dictionary_label)
         self.query_var = tk.StringVar()
         self.stats_var = tk.StringVar()
         self.source_stats_var = tk.StringVar()
@@ -173,6 +199,17 @@ class App(tk.Tk):
             darkcolor=palette["border"], padding=(self._px(8), self._px(7)),
         )
         style.map("TEntry", bordercolor=[("focus", palette["accent"])])
+        style.configure(
+            "TCombobox", fieldbackground=palette["input"], foreground=palette["text"],
+            background=palette["heading"], arrowcolor=palette["muted"],
+            bordercolor=palette["border"], lightcolor=palette["border"],
+            darkcolor=palette["border"], padding=(self._px(8), self._px(7)),
+        )
+        style.map(
+            "TCombobox", fieldbackground=[("readonly", palette["input"])],
+            foreground=[("readonly", palette["text"])],
+            bordercolor=[("focus", palette["accent"])],
+        )
         style.configure(
             "Treeview", background=palette["card"], fieldbackground=palette["card"],
             foreground=palette["text"], rowheight=self._px(34), borderwidth=0,
@@ -298,6 +335,21 @@ class App(tk.Tk):
             anchor="w", pady=(self._px(4), 0)
         )
 
+        dictionary_frame = ttk.Frame(
+            right, style="Card.TFrame", padding=(self._px(14), self._px(12), self._px(14), 0)
+        )
+        dictionary_frame.pack(fill=tk.X)
+        ttk.Label(dictionary_frame, text="Dictionary", style="Muted.TLabel").pack(
+            side=tk.LEFT, padx=(0, self._px(8))
+        )
+        self.dictionary_combo = ttk.Combobox(
+            dictionary_frame, textvariable=self.dictionary_var,
+            values=[label for name, label in self.dictionaries],
+            state="readonly" if self.dictionaries else "disabled",
+        )
+        self.dictionary_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.dictionary_combo.bind("<<ComboboxSelected>>", self._on_dictionary_changed)
+
         controls = ttk.Frame(
             right, style="Card.TFrame", padding=(self._px(14), self._px(12), self._px(14), 0)
         )
@@ -358,6 +410,7 @@ class App(tk.Tk):
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self.tree.bind("<ButtonPress-1>", self._on_tree_press)
         self.tree.bind("<ButtonRelease-1>", self._on_tree_release)
+        self.tree.bind("<Double-Button-1>", self._on_translation_double_click)
         self.tree.bind("<Motion>", self._on_tree_motion)
         self.tree.bind("<Delete>", lambda event: self.remove_selected())
         self.tree.bind("<Return>", lambda event: self.toggle_selected())
@@ -408,9 +461,35 @@ class App(tk.Tk):
         if error:
             messagebox.showwarning(
                 "Translation dictionary",
-                f'Failed to load "dict.json":\n{error}\n\nTranslations will be empty.',
+                f'Failed to load "{self.dictionary_name}":\n{error}\n\nTranslations will be empty.',
                 parent=self,
             )
+
+    def _on_dictionary_changed(self, event=None):
+        dictionary_name = self.dictionary_labels.get(self.dictionary_var.get())
+        if not dictionary_name or dictionary_name == self.dictionary_name:
+            return
+        translations, error = load_translations(dictionary_name)
+        if error:
+            previous_label = next(
+                label for name, label in self.dictionaries if name == self.dictionary_name
+            )
+            self.dictionary_var.set(previous_label)
+            messagebox.showwarning(
+                "Translation dictionary",
+                f'Failed to load "{dictionary_name}":\n{error}\n\n'
+                "The previous dictionary is still active.",
+                parent=self,
+            )
+            return
+        self.dictionary_name = dictionary_name
+        self.full_translations = translations
+        self._translation_cache.clear()
+        self.selected.clear()
+        self._refresh()
+        self.status_var.set(
+            f"Using {self.dictionary_var.get()}: {len(translations)} entries."
+        )
 
     def _restore_state(self):
         geometry = self._state.get("geometry")
@@ -452,7 +531,20 @@ class App(tk.Tk):
             name = "No document loaded"
         self.document_var.set(name)
 
+    def _update_translations(self):
+        for word in self.library.counts:
+            if word not in self._translation_cache:
+                self._translation_cache[word] = lookup_translation(
+                    word, self.full_translations,
+                    use_english_fallback=self.dictionary_name == DEFAULT_DICTIONARY,
+                )
+        self.translations = {
+            word: short_translation(self._translation_cache[word][1] or "")
+            for word in self.library.counts
+        }
+
     def _refresh(self):
+        self._update_translations()
         self._update_tab_labels()
         self._update_sort_headings()
         entries = self.library.entries(
@@ -565,10 +657,60 @@ class App(tk.Tk):
             self.last_click_word = word
         self._jump_to_word(word, self.last_occurrence)
 
+    def _on_translation_double_click(self, event):
+        if self.tree.identify_region(event.x, event.y) != "cell":
+            return
+        if self.tree.identify_column(event.x) != "#3":
+            return
+        item = self.tree.identify_row(event.y)
+        if not item:
+            return
+        word = self._row_word(item)
+        matched_word, definition = self._translation_cache.get(word, (None, None))
+        if definition:
+            self._show_translation(word, matched_word)
+            return "break"
+
+    def _show_translation(self, word, matched_word):
+        window = tk.Toplevel(self)
+        title = word if word == matched_word else f"{word} → {matched_word}"
+        window.title(f"Translation: {title}")
+        window.transient(self)
+        window.configure(bg=self.palette["bg"])
+        window.minsize(self._px(360), self._px(240))
+        window.geometry(f"{self._px(640)}x{self._px(480)}")
+
+        frame = ttk.Frame(window, padding=self._px(12))
+        frame.pack(fill=tk.BOTH, expand=True)
+        text = tk.Text(
+            frame, wrap=tk.WORD, relief="flat", bd=0,
+            padx=self._px(10), pady=self._px(10), font=("Segoe UI", self._px(11)),
+            bg=self.palette["input"], fg=self.palette["text"],
+            selectbackground=self.palette["accent_soft2"],
+            selectforeground=self.palette["text"], spacing1=self._px(2),
+            spacing3=self._px(2), highlightthickness=1,
+            highlightbackground=self.palette["border"], highlightcolor=self.palette["accent"],
+        )
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
+        text.configure(yscrollcommand=scrollbar.set)
+        frame.rowconfigure(0, weight=1)
+        frame.columnconfigure(0, weight=1)
+        text.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        text.insert("1.0", self.full_translations[matched_word])
+        text.configure(state="disabled")
+
+        footer = ttk.Frame(window, padding=(self._px(12), 0, self._px(12), self._px(12)))
+        footer.pack(fill=tk.X)
+        ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
+        window.bind("<Escape>", lambda event: window.destroy())
+        text.focus_set()
+        set_titlebar_color(window, self.palette["card"], dark=self.theme_name == "dark")
+
     def _on_tree_motion(self, event):
         item = self.tree.identify_row(event.y)
-        is_action = bool(item) and self.tree.identify_column(event.x) == "#4"
-        self.tree.configure(cursor="hand2" if is_action else "")
+        is_clickable = bool(item) and self.tree.identify_column(event.x) in ("#3", "#4")
+        self.tree.configure(cursor="hand2" if is_clickable else "")
 
     def _row_word(self, item):
         return self.rows_data[int(item[3:])][0]
@@ -846,6 +988,7 @@ class App(tk.Tk):
             "theme": self.theme_name,
             "scale": self.scale,
             "source_path": self.source_path,
+            "translation_dictionary": self.dictionary_name,
         }
         try:
             save_state(state)

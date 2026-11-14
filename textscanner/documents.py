@@ -3,8 +3,8 @@ import re
 from html.parser import HTMLParser
 
 
-WORD_RE = re.compile(r"[A-Za-z0-9\u0400-\u04FF]+(?:-[A-Za-z0-9\u0400-\u04FF]+)*")
-WORD_CHAR_RE = re.compile(r"[A-Za-z0-9\u0400-\u04FF-]")
+WORD_RE = re.compile(r"[^\W_]+(?:-[^\W_]+)*")
+WORD_CHAR_RE = re.compile(r"(?:[^\W_]|-)")
 
 FILE_TYPES = [
     (
