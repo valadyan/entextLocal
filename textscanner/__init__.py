@@ -1,0 +1,1 @@
+"""Text Scanner desktop application."""
