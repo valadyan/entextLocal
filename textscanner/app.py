@@ -92,14 +92,14 @@ class App(tk.Tk):
         )
         style.configure(
             "Title.TLabel", background=palette["card"], foreground=palette["text"],
-            font=("Segoe UI Semibold", self._px(19)),
+            font=("Segoe UI Semibold", self._px(16)),
         )
         style.configure(
             "Section.TLabel", background=palette["card"], foreground=palette["text"],
-            font=("Segoe UI Semibold", self._px(12)),
+            font=("Segoe UI Semibold", self._px(11)),
         )
         style.configure(
-            "TButton", padding=(self._px(11), self._px(7)), relief="flat",
+            "TButton", padding=(self._px(9), self._px(5)), relief="flat",
             background=palette["heading"], foreground=palette["text"], borderwidth=1,
         )
         style.map(
@@ -122,25 +122,25 @@ class App(tk.Tk):
         )
         style.map("Danger.TButton", background=[("active", palette["danger_hover"])])
         style.configure(
-            "Tab.TButton", padding=(self._px(14), self._px(7)),
+            "Tab.TButton", padding=(self._px(10), self._px(5)),
             background=palette["heading"], foreground=palette["muted"],
         )
         style.configure(
-            "TabActive.TButton", padding=(self._px(14), self._px(7)),
+            "TabActive.TButton", padding=(self._px(10), self._px(5)),
             background=palette["accent_soft"], foreground=palette["accent"],
             font=("Segoe UI Semibold", self._px(10)),
         )
         style.configure(
             "TEntry", fieldbackground=palette["input"], foreground=palette["text"],
             bordercolor=palette["border"], lightcolor=palette["border"],
-            darkcolor=palette["border"], padding=(self._px(8), self._px(7)),
+            darkcolor=palette["border"], padding=(self._px(7), self._px(5)),
         )
         style.map("TEntry", bordercolor=[("focus", palette["accent"])])
         style.configure(
             "TCombobox", fieldbackground=palette["input"], foreground=palette["text"],
             background=palette["heading"], arrowcolor=palette["muted"],
             bordercolor=palette["border"], lightcolor=palette["border"],
-            darkcolor=palette["border"], padding=(self._px(8), self._px(7)),
+            darkcolor=palette["border"], padding=(self._px(7), self._px(5)),
         )
         style.map(
             "TCombobox", fieldbackground=[("readonly", palette["input"])],
@@ -149,13 +149,13 @@ class App(tk.Tk):
         )
         style.configure(
             "Treeview", background=palette["card"], fieldbackground=palette["card"],
-            foreground=palette["text"], rowheight=self._px(34), borderwidth=0,
+            foreground=palette["text"], rowheight=self._px(30), borderwidth=0,
             font=("Segoe UI", self._px(10)),
         )
         style.configure(
             "Treeview.Heading", background=palette["heading"], foreground=palette["muted"],
             relief="flat", font=("Segoe UI Semibold", self._px(9)),
-            padding=(self._px(8), self._px(8)),
+            padding=(self._px(8), self._px(6)),
         )
         style.map(
             "Treeview",
@@ -170,72 +170,60 @@ class App(tk.Tk):
         style.map("Vertical.TScrollbar", background=[("active", palette["muted"])])
 
     def _build_ui(self):
-        header = ttk.Frame(self, style="Card.TFrame", padding=(self._px(20), self._px(14)))
-        header.pack(fill=tk.X)
-        title_group = ttk.Frame(header, style="Card.TFrame")
-        title_group.pack(side=tk.LEFT)
-        ttk.Label(title_group, text="Text Scanner", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(
-            title_group, text="Turn your reading into a personal vocabulary", style="Muted.TLabel"
-        ).pack(anchor="w", pady=(self._px(2), 0))
-        self.theme_button = ttk.Button(header, command=self.toggle_theme)
-        self.theme_button.pack(side=tk.RIGHT)
-
-        toolbar = ttk.Frame(self, padding=(self._px(16), self._px(12)))
+        toolbar = ttk.Frame(self, padding=(self._px(12), self._px(6)))
         toolbar.pack(fill=tk.X)
-        ttk.Button(
-            toolbar, text="Open document", style="Primary.TButton", command=self.open_document
-        ).pack(side=tk.LEFT)
-        ttk.Button(toolbar, text="New workspace", command=self.new_workspace).pack(
-            side=tk.LEFT, padx=(self._px(8), 0)
+
+        self.theme_button = ttk.Button(toolbar, command=self.toggle_theme)
+        self.theme_button.pack(side=tk.LEFT)
+
+        self.dictionary_combo = ttk.Combobox(
+            toolbar, textvariable=self.dictionary_var,
+            values=[label for name, label in self.translator.dictionaries],
+            state="readonly" if self.translator.dictionaries else "disabled",
         )
-        ttk.Button(toolbar, text="Export CSV", command=self.save_csv).pack(side=tk.RIGHT)
-        ttk.Button(toolbar, text="Import CSV", command=self.load_csv).pack(
-            side=tk.RIGHT, padx=(0, self._px(8))
-        )
+
+        self.dictionary_combo.pack(side=tk.RIGHT, expand=True)
+        self.dictionary_combo.bind("<<ComboboxSelected>>", self._on_dictionary_changed)
+
 
         self.paned = tk.PanedWindow(
-            self, orient=tk.HORIZONTAL, bg=self.palette["bg"], sashwidth=self._px(7),
+            self, orient=tk.HORIZONTAL, bg=self.palette["bg"], sashwidth=self._px(5),
             sashrelief=tk.FLAT, bd=0, opaqueresize=True,
         )
         self.paned.pack(
-            fill=tk.BOTH, expand=True, padx=self._px(16), pady=(0, self._px(12))
+            fill=tk.BOTH, expand=True, padx=self._px(12), pady=(0, self._px(6))
         )
         self._build_source_panel()
         self._build_vocabulary_panel()
 
-        footer = ttk.Frame(self, padding=(self._px(18), 0, self._px(18), self._px(10)))
-        footer.pack(fill=tk.X)
-        ttk.Label(footer, textvariable=self.status_var, style="Status.TLabel").pack(side=tk.LEFT)
-        ttk.Button(footer, text="Reset zoom", command=self._zoom_reset).pack(side=tk.RIGHT)
-        ttk.Label(footer, textvariable=self.zoom_var, style="Status.TLabel").pack(
-            side=tk.RIGHT, padx=(0, self._px(8))
-        )
         self._update_theme_button()
         self._update_zoom_label()
 
     def _build_source_panel(self):
         left = ttk.Frame(self.paned, style="Card.TFrame")
         self.paned.add(left, minsize=self._px(300), stretch="always")
+
         heading = ttk.Frame(
-            left, style="Card.TFrame", padding=(self._px(16), self._px(14))
+            left, style="Card.TFrame", padding=(self._px(8), self._px(8), self._px(8), self._px(8))
         )
         heading.pack(fill=tk.X)
-        ttk.Label(heading, text="Source text", style="Section.TLabel").pack(anchor="w")
-        ttk.Label(heading, textvariable=self.document_var, style="Muted.TLabel").pack(
-            anchor="w", pady=(self._px(3), 0)
+        ttk.Button(
+            heading, text="Open document", style="Primary.TButton", command=self.open_document
+        ).pack(side=tk.LEFT)
+        ttk.Button(heading, text="New workspace", command=self.new_workspace).pack(
+            side=tk.LEFT, padx=(self._px(6), 0)
         )
 
         text_frame = ttk.Frame(
-            left, style="Card.TFrame", padding=(self._px(12), 0, self._px(12), 0)
+            left, style="Card.TFrame", padding=(self._px(8), 0, self._px(8), 0)
         )
         text_frame.pack(fill=tk.BOTH, expand=True)
         self.text = tk.Text(
             text_frame, wrap=tk.WORD, undo=True, relief="flat", bd=0,
-            padx=self._px(10), pady=self._px(10), font=("Consolas", self._px(10)),
+            padx=self._px(8), pady=self._px(8), font=("Consolas", self._px(10)),
             bg=self.palette["input"], fg=self.palette["text"],
             insertbackground=self.palette["text"], selectbackground=self.palette["accent_soft2"],
-            selectforeground=self.palette["text"], spacing1=self._px(2), spacing3=self._px(2),
+            selectforeground=self.palette["text"], spacing1=self._px(1), spacing3=self._px(1),
             highlightthickness=1, highlightbackground=self.palette["border"],
             highlightcolor=self.palette["accent"],
         )
@@ -250,7 +238,7 @@ class App(tk.Tk):
         self.text.bind("<<Modified>>", self._on_text_modified)
 
         source_footer = ttk.Frame(
-            left, style="Card.TFrame", padding=(self._px(14), self._px(10))
+            left, style="Card.TFrame", padding=(self._px(10), self._px(6))
         )
         source_footer.pack(fill=tk.X)
         ttk.Label(source_footer, textvariable=self.source_stats_var, style="Muted.TLabel").pack(
@@ -263,32 +251,9 @@ class App(tk.Tk):
     def _build_vocabulary_panel(self):
         right = ttk.Frame(self.paned, style="Card.TFrame")
         self.paned.add(right, minsize=self._px(430), stretch="always")
-        heading = ttk.Frame(
-            right, style="Card.TFrame", padding=(self._px(16), self._px(14), self._px(16), 0)
-        )
-        heading.pack(fill=tk.X)
-        ttk.Label(heading, text="Vocabulary", style="Section.TLabel").pack(anchor="w")
-        ttk.Label(heading, textvariable=self.stats_var, style="Muted.TLabel").pack(
-            anchor="w", pady=(self._px(4), 0)
-        )
-
-        dictionary_frame = ttk.Frame(
-            right, style="Card.TFrame", padding=(self._px(14), self._px(12), self._px(14), 0)
-        )
-        dictionary_frame.pack(fill=tk.X)
-        ttk.Label(dictionary_frame, text="Dictionary", style="Muted.TLabel").pack(
-            side=tk.LEFT, padx=(0, self._px(8))
-        )
-        self.dictionary_combo = ttk.Combobox(
-            dictionary_frame, textvariable=self.dictionary_var,
-            values=[label for name, label in self.translator.dictionaries],
-            state="readonly" if self.translator.dictionaries else "disabled",
-        )
-        self.dictionary_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.dictionary_combo.bind("<<ComboboxSelected>>", self._on_dictionary_changed)
 
         controls = ttk.Frame(
-            right, style="Card.TFrame", padding=(self._px(14), self._px(12), self._px(14), 0)
+            right, style="Card.TFrame", padding=(self._px(8), self._px(8), self._px(8), 0)
         )
         controls.pack(fill=tk.X)
         self.tab_buttons = {}
@@ -297,30 +262,35 @@ class App(tk.Tk):
                 controls, text=label, style="Tab.TButton",
                 command=lambda tab=key: self.switch_tab(tab),
             )
-            button.pack(side=tk.LEFT, padx=(0, self._px(6)))
+            button.pack(side=tk.LEFT, padx=(0, self._px(4)))
             self.tab_buttons[key] = button
 
-        search_frame = ttk.Frame(
-            right, style="Card.TFrame", padding=(self._px(14), self._px(10), self._px(14), 0)
-        )
-        search_frame.pack(fill=tk.X)
-        ttk.Label(search_frame, text="Filter", style="Muted.TLabel").pack(
-            side=tk.LEFT, padx=(0, self._px(8))
-        )
-        self.search_entry = ttk.Entry(search_frame, textvariable=self.query_var)
+
+        self.search_entry = ttk.Entry(controls, textvariable=self.query_var)
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.search_entry.insert(0, "")
-        ttk.Button(search_frame, text="Clear", command=self.clear_search).pack(
-            side=tk.LEFT, padx=(self._px(6), 0)
+        ttk.Button(controls, text="x", width=2, command=self.clear_search).pack(
+            side=tk.LEFT, padx=(self._px(4), self._px(6))
+        )
+
+        ttk.Button(controls, text="Export table", command=self.save_csv).pack(
+            side=tk.RIGHT
+        )
+        ttk.Button(controls, text="Import table", command=self.load_csv).pack(
+            side=tk.RIGHT, padx=(0, self._px(6))
+        )
+
+        ttk.Label(right, textvariable=self.stats_var, style="Muted.TLabel").pack(
+            anchor="center", pady=(self._px(4), 0)
         )
 
         table_frame = ttk.Frame(
-            right, style="Card.TFrame", padding=(self._px(12), self._px(10), self._px(12), 0)
+            right, style="Card.TFrame", padding=(self._px(8), 0, self._px(8), 0)
         )
         table_frame.pack(fill=tk.BOTH, expand=True)
         columns = ("word", "count", "translation", "actions")
         self.tree = ttk.Treeview(
-            table_frame, columns=columns, show="headings", selectmode="extended"
+            table_frame, columns=columns, show="headings", selectmode="extended", height=5
         )
         self._columns = (
             ("word", 180, "Word", "w"),
@@ -355,23 +325,22 @@ class App(tk.Tk):
         self.tree.bind("<Control-A>", self._select_all)
 
         selection_bar = ttk.Frame(
-            right, style="Card.TFrame", padding=(self._px(14), self._px(12))
+            right, style="Card.TFrame", padding=(self._px(10), self._px(6))
         )
         selection_bar.pack(fill=tk.X)
-        ttk.Label(selection_bar, textvariable=self.selection_var, style="Muted.TLabel").pack(
-            anchor="w", pady=(0, self._px(8))
-        )
         actions = ttk.Frame(selection_bar, style="Card.TFrame")
         actions.pack(fill=tk.X)
+
         self.learn_button = ttk.Button(actions, text="Mark learned", command=self.learn_selected)
         self.learn_button.pack(side=tk.LEFT)
+
         self.return_button = ttk.Button(actions, text="Move to learn", command=self.unlearn_selected)
         self.remove_button = ttk.Button(
             actions, text="Remove", style="Danger.TButton", command=self.remove_selected
         )
         self.remove_button.pack(side=tk.RIGHT)
         self.clear_button = ttk.Button(actions, text="Clear selection", command=self.clear_selection)
-        self.clear_button.pack(side=tk.RIGHT, padx=(0, self._px(6)))
+        self.clear_button.pack(side=tk.RIGHT)
 
     def _bind_shortcuts(self):
         self.bind_all("<Control-o>", lambda event: self.open_document())
@@ -450,7 +419,6 @@ class App(tk.Tk):
         content = self.text.get("1.0", "end-1c")
         lines = len(content.splitlines()) if content else 0
         suffix = " · unsaved scan changes" if self._source_dirty else ""
-        self.source_stats_var.set(f"{lines} lines · {len(content)} characters{suffix}")
         if self.source_path:
             name = os.path.basename(self.source_path)
         elif content:
@@ -458,7 +426,8 @@ class App(tk.Tk):
         else:
             name = "No document loaded"
         self.document_var.set(name)
-
+        self.source_stats_var.set(f"{name} · {lines} lines · {len(content)} characters{suffix}")
+        
     def _refresh(self):
         translations = self.translator.update(self.library.counts)
         self._update_tab_labels()
@@ -508,15 +477,21 @@ class App(tk.Tk):
             self.tree.heading(column, text=label + suffix)
 
     def _update_stats(self):
-        totals = self.library.totals(self.current_tab, self.query_var.get(), self.translator.translations)
+        totals = self.library.totals(
+            self.current_tab, self.query_var.get(), self.translator.translations
+        )
         if not self.library.counts:
             self.stats_var.set("Your word list is empty")
             return
+        translated = sum(
+            bool(self.translator.translations.get(word)) for word, _count in self.rows_data
+        )
         text = (
-            f"{totals['visible_words']} words · {totals['visible_occurrences']} occurrences"
+            f"{totals['visible_occurrences']} occurrences"
+            f" · {translated} translated"
         )
         if self.query_var.get().strip():
-            text += f" · filtered from {totals['total_words']} unique words"
+            text += f" · of {totals['total_words']} total"
         self.stats_var.set(text)
 
     def _update_selection_ui(self):
