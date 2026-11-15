@@ -60,23 +60,36 @@ def _decode_dict_number(value):
     return number
 
 
-def lemma_candidates(word):
-    from lemminflect import getLemma
-
-    candidates = []
-    for upos in ("NOUN", "VERB", "ADJ", "ADV"):
-        candidates.extend(getLemma(word, upos=upos))
-    return dict.fromkeys(candidates)
+SIMPLEMMA_LANGUAGES = {
+    "cat": "ca", "ces": "cs", "deu": "de", "ell": "el", "fra": "fr",
+    "ita": "it", "nld": "nl", "pol": "pl", "spa": "es", "swe": "sv",
+}
 
 
-def lookup_translation(word, translations, use_english_fallback=True):
+def lemma_candidates(word, source_language="eng"):
+    if source_language == "eng":
+        from lemminflect import getLemma
+
+        candidates = []
+        for upos in ("NOUN", "VERB", "ADJ", "ADV"):
+            candidates.extend(getLemma(word, upos=upos))
+        return dict.fromkeys(candidates)
+    language = SIMPLEMMA_LANGUAGES.get(source_language)
+    if not language:
+        return ()
+    from simplemma import lemmatize
+
+    return (lemmatize(word, lang=language),)
+
+
+def lookup_translation(word, translations, source_language="eng"):
     word = word.lower()
     if word in translations:
         return word, translations[word]
-    if use_english_fallback:
-        for candidate in lemma_candidates(word):
-            if candidate in translations:
-                return candidate, translations[candidate]
+    for candidate in lemma_candidates(word, source_language):
+        candidate = candidate.lower()
+        if candidate in translations:
+            return candidate, translations[candidate]
     return None, None
 
 
@@ -171,7 +184,7 @@ class TranslationManager:
         if word not in self._translation_cache:
             self._translation_cache[word] = lookup_translation(
                 word, self.full_translations,
-                use_english_fallback=self.dictionary_name == DEFAULT_DICTIONARY,
+                source_language=self.dictionary_name.partition("-")[0],
             )
         return self._translation_cache[word]
 

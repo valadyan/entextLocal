@@ -10,13 +10,13 @@ There is no backend, network service, database, or independently installable Pyt
 - `textscanner/app.py`: `App(tk.Tk)`, all Tkinter/`ttk` UI construction, event handling, shortcuts, dialogs, theme/zoom rebuilding, and coordination between helpers.
 - `textscanner/documents.py`: word regular expressions, plain-text decoding, HTML cleanup, and format-specific document extraction.
 - `textscanner/library.py`: `WordLibrary`, which owns word counts and learned words and implements rescanning, merging, filtering, sorting, totals, and vocabulary actions.
-- `textscanner/translations.py`: dictionary discovery/loading, English lemmatization, short-entry extraction, and `TranslationManager`, which owns the selected dictionary, full definitions, lookup cache, and short translations.
+- `textscanner/translations.py`: dictionary discovery/loading, multilingual lemmatization, short-entry extraction, and `TranslationManager`, which owns the selected dictionary, full definitions, lookup cache, and short translations.
 - `textscanner/storage.py`: session normalization and snapshots, session JSON loading, atomic session writes, and CSV reading/writing.
 - `textscanner/theme.py`: self-contained `LIGHT` and `DARK` color palette dictionaries.
 - `textscanner/windowing.py`: Windows titlebar styling with a no-op fallback on other platforms.
 - `textscanner/__init__.py`: package docstring only.
 - `dicts/`: thirteen bundled source-to-Russian dictionary directories: Catalan, Czech, German, Greek, English, French, Italian, Japanese, Dutch, Polish, Spanish, Swedish, and Chinese. Each contains a matching `.index`/`.dict.dz` pair plus upstream `README`, `INSTALL`, and `COPYING` files.
-- `requirements.txt`: the only Python dependency manifest; it pins LemmInflect, with NumPy installed transitively.
+- `requirements.txt`: the only Python dependency manifest; it pins LemmInflect and Simplemma, with NumPy installed transitively.
 - `.gitignore`: excludes Python bytecode, virtual environments, build output, tool caches, and session files.
 
 The normal data flow is `documents.extract_text_from_file()` or edited source text -> `documents.extract_words()` -> `WordLibrary` -> the vocabulary `Treeview` in `App`. `TranslationManager` supplies table summaries and full popup entries. `storage.py` handles session and CSV data at the application boundary. Keep document parsing, vocabulary logic, translation management, and storage independent of Tkinter; GUI behavior belongs in `App`, while reusable non-GUI behavior belongs in the appropriate helper module.
@@ -25,9 +25,9 @@ Application state is held in memory while the UI runs. The complete session is w
 
 ## Technology, configuration, and dependencies
 
-The implementation uses Python, the standard library (principally `tkinter`, `csv`, `json`, `re`, and `html.parser`), and LemmInflect for English lemmatization. NumPy is LemmInflect's runtime dependency. No minimum Python version is declared. A working Tk installation and graphical display are required to run the application; do not construct Tk windows in a headless environment.
+The implementation uses Python, the standard library (principally `tkinter`, `csv`, `json`, `re`, and `html.parser`), LemmInflect for English lemmatization, and Simplemma for other supported languages. NumPy is LemmInflect's runtime dependency. Simplemma 2.0 requires Python 3.10 or later. A working Tk installation and graphical display are required to run the application; do not construct Tk windows in a headless environment.
 
-The only project configuration files are `requirements.txt` and `.gitignore`. There is no `pyproject.toml`, `setup.py`, lockfile, linter, formatter, type-checker, test-runner, CI, or packaging configuration. `requirements.txt` contains exactly `lemminflect==0.2.3`. Do not describe unconfigured tools as available.
+The only project configuration files are `requirements.txt` and `.gitignore`. There is no `pyproject.toml`, `setup.py`, lockfile, linter, formatter, type-checker, test-runner, CI, or packaging configuration. `requirements.txt` pins `lemminflect==0.2.3` and `simplemma==2.0.0`. Do not describe unconfigured tools as available.
 
 From the project root, set up a project-local virtual environment and run the development entry point with:
 
@@ -39,7 +39,7 @@ python3 -m venv .venv
 
 The working directory matters: dictionary resources and `state.json` are resolved relative to the process working directory unless a packaged application supplies PyInstaller's `_MEIPASS` resource directory.
 
-LemmInflect is imported lazily only for English fallback lookups; it is not used by other dictionary languages. It must be installed for English inflection support rather than silently falling back to incomplete custom rules.
+LemmInflect and Simplemma are imported lazily only for fallback lookups in their supported languages. They must be installed for inflection support rather than silently falling back to incomplete custom rules. Japanese and Chinese use exact dictionary lookup only.
 
 Document-parser dependencies are optional and imported lazily only when their format is opened:
 
@@ -91,7 +91,7 @@ A syntax check cannot validate Tkinter layout, callbacks, file dialogs, or sessi
 - Clicking a word highlights whole-word source matches. Repeated clicks cycle through matches and scroll to the current occurrence.
 - The Translation column shows only the first Russian equivalent. Double-clicking a translated cell opens the complete multi-line dictionary entry in a read-only window.
 - The Dictionary dropdown lists valid dictionary folders with friendly language-pair labels. Switching preserves the source text, counts, learned status, and active filter while rebuilding translations. A failed switch keeps the previous dictionary active.
-- English lookup prefers exact headwords, then tries dictionary-validated LemmInflect noun, verb, adjective, and adverb lemmas, including out-of-vocabulary forms. Other dictionaries use exact lookup only. Lemmatization is broad but not perfect or context-sensitive. A popup opened through an inflected word identifies the resolved headword.
+- Lookup prefers exact headwords, then tries dictionary-validated lemmas. English uses LemmInflect noun, verb, adjective, and adverb candidates, including out-of-vocabulary forms. Catalan, Czech, German, Greek, French, Italian, Dutch, Polish, Spanish, and Swedish use Simplemma. Japanese and Chinese use exact lookup only. Lemmatization is broad but not perfect or context-sensitive. A popup opened through an inflected word identifies the resolved headword.
 - CSV export writes a UTF-8 BOM and the header `word,occurrences,translate` for the active tab, independent of the current filter. CSV import reads words/counts, ignores translation columns, keeps the larger count for duplicate/existing words, and applies the active tab's learned status to imported words.
 - Important shortcuts are Ctrl+O (open), Ctrl+S (export), Ctrl+N (new workspace), Ctrl+F (filter), F5 (rescan), Escape (clear filter, otherwise clear selection), Delete (remove selected), and Ctrl plus/minus/0 (zoom). Ctrl+mouse wheel also zooms where supported.
 - Theme and zoom changes rebuild the UI while preserving source text, geometry, scroll position, and unscanned-change status. Zoom is clamped to 50%-300%.
@@ -110,4 +110,4 @@ A syntax check cannot validate Tkinter layout, callbacks, file dialogs, or sessi
 
 No executable build command, PyInstaller spec, bundled-resource configuration, installer, release process, or deployment target is configured. `resource_path()` contains `_MEIPASS` handling for `dicts`, but that alone does not constitute packaging support.
 
-Packaging work must explicitly include the `textscanner` modules, LemmInflect and NumPy, and the dictionary index/data files, account for optional parser dependencies, choose a writable session location instead of assuming the launch directory is writable, and verify startup and document parsing on every target platform. Windows-only titlebar styling in `windowing.py` already degrades to a no-op on other platforms.
+Packaging work must explicitly include the `textscanner` modules, LemmInflect, Simplemma and its language data, NumPy, and the dictionary index/data files, account for optional parser dependencies, choose a writable session location instead of assuming the launch directory is writable, and verify startup and document parsing on every target platform. Windows-only titlebar styling in `windowing.py` already degrades to a no-op on other platforms.
