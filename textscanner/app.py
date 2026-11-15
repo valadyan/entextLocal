@@ -1,6 +1,5 @@
 import csv
 import os
-import sys
 import tkinter as tk
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
@@ -8,48 +7,17 @@ from tkinter import filedialog, messagebox, ttk
 from .documents import FILE_TYPES, WORD_CHAR_RE, extract_text_from_file
 from .library import WordLibrary
 from .storage import (
-    DEFAULT_DICTIONARY,
     STATE_FILE,
-    available_dictionaries,
     load_state,
-    load_translations,
-    lookup_translation,
+    make_session_state,
+    normalize_state,
     read_word_table,
     save_state,
-    short_translation,
     write_word_table,
 )
 from .theme import DARK, LIGHT
-
-
-def set_titlebar_color(window, hex_color, dark=True):
-    if sys.platform != "win32":
-        return False
-    try:
-        import ctypes
-        from ctypes import wintypes
-
-        color = hex_color.lstrip("#")
-        red, green, blue = (int(color[index:index + 2], 16) for index in (0, 2, 4))
-        colorref = ctypes.c_int((blue << 16) | (green << 8) | red)
-        hwnd = wintypes.HWND(window.winfo_id())
-        user32 = ctypes.windll.user32
-        hwnd = wintypes.HWND(user32.GetAncestor(hwnd, 2))
-        dwm = ctypes.windll.dwmapi
-        dark_flag = ctypes.c_int(1 if dark else 0)
-        for attribute in (20, 19):
-            if dwm.DwmSetWindowAttribute(
-                hwnd, attribute, ctypes.byref(dark_flag), ctypes.sizeof(dark_flag)
-            ) == 0:
-                break
-        for attribute in (35, 34):
-            dwm.DwmSetWindowAttribute(
-                hwnd, attribute, ctypes.byref(colorref), ctypes.sizeof(colorref)
-            )
-        user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0027)
-        return True
-    except (AttributeError, OSError, ValueError):
-        return False
+from .translations import TranslationManager
+from .windowing import set_titlebar_color
 
 
 class App(tk.Tk):
@@ -58,44 +26,16 @@ class App(tk.Tk):
         self.title("Text Scanner")
         self.minsize(960, 600)
 
-        self._state = load_state()
+        self._state = normalize_state(load_state())
         self.library = WordLibrary(
-            self._state.get("dictionary", {}), self._state.get("learned", [])
+            self._state["dictionary"], self._state["learned"]
         )
-        self.dictionaries = available_dictionaries()
-        self.dictionary_labels = {label: name for name, label in self.dictionaries}
-        dictionary_names = {name for name, label in self.dictionaries}
-        selected_dictionary = self._state.get(
-            "translation_dictionary", DEFAULT_DICTIONARY
-        )
-        if not isinstance(selected_dictionary, str) or selected_dictionary not in dictionary_names:
-            selected_dictionary = (
-                DEFAULT_DICTIONARY if DEFAULT_DICTIONARY in dictionary_names
-                else self.dictionaries[0][0] if self.dictionaries else ""
-            )
-        self.dictionary_name = selected_dictionary
-        if selected_dictionary:
-            self.full_translations, translation_error = load_translations(selected_dictionary)
-        else:
-            self.full_translations = {}
-            translation_error = 'No valid dictionaries found in "dicts".'
-        self.translations = {}
-        self._translation_cache = {}
-        self.theme_name = self._state.get("theme", "light")
-        if self.theme_name not in ("light", "dark"):
-            self.theme_name = "light"
+        self.translator = TranslationManager(self._state["translation_dictionary"])
+        self.theme_name = self._state["theme"]
         self.palette = DARK if self.theme_name == "dark" else LIGHT
-        try:
-            self.scale = max(0.5, min(3.0, float(self._state.get("scale", 1.0))))
-        except (TypeError, ValueError):
-            self.scale = 1.0
-
-        self.current_tab = self._state.get("current_tab", "all")
-        if self.current_tab not in ("all", "learned"):
-            self.current_tab = "all"
-        self.source_path = self._state.get("source_path", "")
-        if not isinstance(self.source_path, str):
-            self.source_path = ""
+        self.scale = self._state["scale"]
+        self.current_tab = self._state["current_tab"]
+        self.source_path = self._state["source_path"]
         self.selected = set()
         self.rows_data = []
         self.sort_column = "count"
@@ -104,10 +44,7 @@ class App(tk.Tk):
         self.last_occurrence = 0
         self._source_dirty = False
 
-        dictionary_label = next(
-            (label for name, label in self.dictionaries if name == self.dictionary_name), ""
-        )
-        self.dictionary_var = tk.StringVar(value=dictionary_label)
+        self.dictionary_var = tk.StringVar(value=self.translator.dictionary_label)
         self.query_var = tk.StringVar()
         self.stats_var = tk.StringVar()
         self.source_stats_var = tk.StringVar()
@@ -123,7 +60,7 @@ class App(tk.Tk):
         self._restore_state()
         self._refresh()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.after(100, self._show_startup_warning, translation_error)
+        self.after(100, self._show_startup_warning, self.translator.error)
 
     def _px(self, value):
         return max(1, int(round(value * self.scale)))
@@ -344,8 +281,8 @@ class App(tk.Tk):
         )
         self.dictionary_combo = ttk.Combobox(
             dictionary_frame, textvariable=self.dictionary_var,
-            values=[label for name, label in self.dictionaries],
-            state="readonly" if self.dictionaries else "disabled",
+            values=[label for name, label in self.translator.dictionaries],
+            state="readonly" if self.translator.dictionaries else "disabled",
         )
         self.dictionary_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.dictionary_combo.bind("<<ComboboxSelected>>", self._on_dictionary_changed)
@@ -461,20 +398,18 @@ class App(tk.Tk):
         if error:
             messagebox.showwarning(
                 "Translation dictionary",
-                f'Failed to load "{self.dictionary_name}":\n{error}\n\nTranslations will be empty.',
+                f'Failed to load "{self.translator.dictionary_name}":\n{error}\n\n'
+                "Translations will be empty.",
                 parent=self,
             )
 
     def _on_dictionary_changed(self, event=None):
-        dictionary_name = self.dictionary_labels.get(self.dictionary_var.get())
-        if not dictionary_name or dictionary_name == self.dictionary_name:
+        dictionary_name = self.translator.name_for_label(self.dictionary_var.get())
+        if not dictionary_name or dictionary_name == self.translator.dictionary_name:
             return
-        translations, error = load_translations(dictionary_name)
+        error = self.translator.switch(dictionary_name)
         if error:
-            previous_label = next(
-                label for name, label in self.dictionaries if name == self.dictionary_name
-            )
-            self.dictionary_var.set(previous_label)
+            self.dictionary_var.set(self.translator.dictionary_label)
             messagebox.showwarning(
                 "Translation dictionary",
                 f'Failed to load "{dictionary_name}":\n{error}\n\n'
@@ -482,26 +417,19 @@ class App(tk.Tk):
                 parent=self,
             )
             return
-        self.dictionary_name = dictionary_name
-        self.full_translations = translations
-        self._translation_cache.clear()
         self.selected.clear()
         self._refresh()
         self.status_var.set(
-            f"Using {self.dictionary_var.get()}: {len(translations)} entries."
+            f"Using {self.dictionary_var.get()}: "
+            f"{len(self.translator.full_translations)} entries."
         )
 
     def _restore_state(self):
-        geometry = self._state.get("geometry")
-        if isinstance(geometry, str) and geometry:
-            try:
-                self.geometry(geometry)
-            except tk.TclError:
-                self.geometry("1280x760")
-        else:
+        try:
+            self.geometry(self._state["geometry"])
+        except tk.TclError:
             self.geometry("1280x760")
-        text = self._state.get("text", "")
-        self._set_text(text if isinstance(text, str) else "")
+        self._set_text(self._state["text"])
 
     def _set_text(self, text):
         self.text.delete("1.0", "end")
@@ -531,24 +459,12 @@ class App(tk.Tk):
             name = "No document loaded"
         self.document_var.set(name)
 
-    def _update_translations(self):
-        for word in self.library.counts:
-            if word not in self._translation_cache:
-                self._translation_cache[word] = lookup_translation(
-                    word, self.full_translations,
-                    use_english_fallback=self.dictionary_name == DEFAULT_DICTIONARY,
-                )
-        self.translations = {
-            word: short_translation(self._translation_cache[word][1] or "")
-            for word in self.library.counts
-        }
-
     def _refresh(self):
-        self._update_translations()
+        translations = self.translator.update(self.library.counts)
         self._update_tab_labels()
         self._update_sort_headings()
         entries = self.library.entries(
-            self.current_tab, self.query_var.get(), self.translations,
+            self.current_tab, self.query_var.get(), translations,
             self.sort_column, self.sort_reverse,
         )
         visible_words = {word for word, _ in entries}
@@ -557,7 +473,7 @@ class App(tk.Tk):
         self.rows_data = entries
         selected_ids = []
         for index, (word, count) in enumerate(entries):
-            translation = self.translations.get(word, "")
+            translation = translations.get(word, "")
             action = "Move to learn" if self.current_tab == "learned" else "Mark learned"
             tags = ["odd" if index % 2 else "even"]
             if not translation:
@@ -592,7 +508,7 @@ class App(tk.Tk):
             self.tree.heading(column, text=label + suffix)
 
     def _update_stats(self):
-        totals = self.library.totals(self.current_tab, self.query_var.get(), self.translations)
+        totals = self.library.totals(self.current_tab, self.query_var.get(), self.translator.translations)
         if not self.library.counts:
             self.stats_var.set("Your word list is empty")
             return
@@ -666,12 +582,12 @@ class App(tk.Tk):
         if not item:
             return
         word = self._row_word(item)
-        matched_word, definition = self._translation_cache.get(word, (None, None))
+        matched_word, definition = self.translator.entry(word)
         if definition:
-            self._show_translation(word, matched_word)
+            self._show_translation(word, matched_word, definition)
             return "break"
 
-    def _show_translation(self, word, matched_word):
+    def _show_translation(self, word, matched_word, definition):
         window = tk.Toplevel(self)
         title = word if word == matched_word else f"{word} → {matched_word}"
         window.title(f"Translation: {title}")
@@ -697,7 +613,7 @@ class App(tk.Tk):
         frame.columnconfigure(0, weight=1)
         text.grid(row=0, column=0, sticky="nsew")
         scrollbar.grid(row=0, column=1, sticky="ns")
-        text.insert("1.0", self.full_translations[matched_word])
+        text.insert("1.0", definition)
         text.configure(state="disabled")
 
         footer = ttk.Frame(window, padding=(self._px(12), 0, self._px(12), self._px(12)))
@@ -913,7 +829,7 @@ class App(tk.Tk):
         self.status_var.set(f"Imported {len(counts)} words into the active tab.")
 
     def save_csv(self):
-        entries = self.library.tab_entries(self.current_tab, self.translations)
+        entries = self.library.tab_entries(self.current_tab, self.translator.translations)
         if not entries:
             messagebox.showinfo("Export CSV", "The active tab has no words to export.", parent=self)
             return
@@ -925,7 +841,7 @@ class App(tk.Tk):
         if not path:
             return
         try:
-            write_word_table(path, entries, self.translations)
+            write_word_table(path, entries, self.translator.translations)
         except OSError as error:
             messagebox.showerror("Export CSV", f"Failed to save the file:\n{error}", parent=self)
             return
@@ -979,17 +895,17 @@ class App(tk.Tk):
         return self._zoom_by(1 if event.delta > 0 else -1)
 
     def _save_state(self):
-        state = {
-            "geometry": self.geometry(),
-            "text": self.text.get("1.0", "end-1c"),
-            "dictionary": self.library.counts,
-            "learned": sorted(self.library.learned),
-            "current_tab": self.current_tab,
-            "theme": self.theme_name,
-            "scale": self.scale,
-            "source_path": self.source_path,
-            "translation_dictionary": self.dictionary_name,
-        }
+        state = make_session_state(
+            geometry=self.geometry(),
+            text=self.text.get("1.0", "end-1c"),
+            counts=self.library.counts,
+            learned=self.library.learned,
+            current_tab=self.current_tab,
+            theme_name=self.theme_name,
+            scale=self.scale,
+            source_path=self.source_path,
+            translation_dictionary=self.translator.dictionary_name,
+        )
         try:
             save_state(state)
         except OSError as error:
