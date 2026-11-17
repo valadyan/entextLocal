@@ -17,7 +17,7 @@ There is no backend, network service, database, or independently installable Pyt
 - `textscanner/windowing.py`: Windows titlebar styling with a no-op fallback on other platforms.
 - `textscanner/__init__.py`: package docstring only.
 - `dicts/`: thirteen bundled source-to-Russian dictionary directories: Catalan, Czech, German, Greek, English, French, Italian, Japanese, Dutch, Polish, Spanish, Swedish, and Chinese. Each contains a matching `.index`/`.dict.dz` pair plus upstream `README`, `INSTALL`, and `COPYING` files.
-- `requirements.txt`: the only Python dependency manifest; it pins LemmInflect and Simplemma, with NumPy installed transitively.
+- `requirements.txt`: the Python dependency manifest; it pins LemmInflect, Simplemma, and all document parsers, with NumPy, lxml, and typing-extensions installed transitively.
 - `.gitignore`: excludes Python bytecode, virtual environments, build output, tool caches, and session files.
 
 The normal data flow is `documents.extract_text_from_file()` or edited source text -> `documents.extract_words()` -> `WordLibrary` -> the vocabulary `Treeview` in `App`. `TranslationManager` supplies table summaries and full popup entries. `storage.py` handles session and CSV data at the application boundary. Keep document parsing, vocabulary logic, translation management, and storage independent of Tkinter; GUI behavior belongs in `App`, while reusable non-GUI behavior belongs in the appropriate helper module.
@@ -26,9 +26,9 @@ Application state is held in memory while the UI runs. The complete session is w
 
 ## Technology, configuration, and dependencies
 
-The implementation uses Python, the standard library (principally `tkinter`, `csv`, `json`, `re`, and `html.parser`), LemmInflect for English lemmatization, and Simplemma for other supported languages. NumPy is LemmInflect's runtime dependency. Simplemma 2.0 requires Python 3.10 or later. A working Tk installation and graphical display are required to run the application; do not construct Tk windows in a headless environment.
+The implementation uses Python, the standard library (principally `tkinter`, `csv`, `json`, and `re`), LemmInflect for English lemmatization, Simplemma for other supported languages, pypdf for PDF, python-docx for DOCX, EbookLib for EPUB, striprtf for RTF, and html2text for HTML. NumPy is LemmInflect's runtime dependency. Simplemma 2.0 requires Python 3.10 or later. A working Tk installation and graphical display are required to run the application; do not construct Tk windows in a headless environment.
 
-The only project configuration files are `requirements.txt` and `.gitignore`. There is no `pyproject.toml`, `setup.py`, lockfile, linter, formatter, type-checker, test-runner, CI, or packaging configuration. `requirements.txt` pins `lemminflect==0.2.3` and `simplemma==2.0.0`. Do not describe unconfigured tools as available.
+Project configuration is held in `requirements.txt`, `.gitignore`, and `main.spec`; user and developer documentation is in `README.md`. There is no `pyproject.toml`, `setup.py`, lockfile, linter, formatter, type-checker, test-runner, or CI. Do not describe unconfigured tools as available.
 
 From the project root, set up a project-local virtual environment and run the development entry point with:
 
@@ -42,17 +42,7 @@ The working directory matters: dictionary resources and `state.json` are resolve
 
 LemmInflect and Simplemma are imported lazily only for fallback lookups in their supported languages. They must be installed for inflection support rather than silently falling back to incomplete custom rules. Japanese and Chinese use exact dictionary lookup only.
 
-Document-parser dependencies are optional and imported lazily only when their format is opened:
-
-```bash
-pip install pypdf          # PDF
-pip install striprtf       # RTF
-pip install python-docx    # DOCX
-pip install EbookLib       # EPUB
-pip install html2text      # optional HTML/EPUB conversion enhancement
-```
-
-Install only the parsers needed for the formats being used. Keep each dependency independently optional and preserve the existing `ValueError`-to-messagebox error flow for missing support. HTML and EPUB have a standard-library HTML cleanup fallback when `html2text` is unavailable. LIT files are not parsed directly and must be converted externally, for example with Calibre. Scanned PDFs require external OCR before text extraction.
+All document parsers are required dependencies and regular imports in `documents.py`. They are installed through `requirements.txt` and included in PyInstaller builds. PDF, DOCX, EPUB, RTF, HTML, and XHTML use their dedicated parsers; HTML and EPUB both use html2text. LIT files are not parsed directly and must be converted externally, for example with Calibre. Scanned PDFs require external OCR before text extraction.
 
 Plain text and several source/document extensions are decoded by trying UTF-8 with BOM, UTF-8, UTF-16, CP1251, and Latin-1. Unknown extensions also fall back to the plain-text reader. PDF, DOCX, EPUB, RTF, HTML, and LIT receive their explicit handling in `documents.py`.
 
@@ -80,7 +70,7 @@ A syntax check cannot validate Tkinter layout, callbacks, file dialogs, or sessi
 - Follow the existing compact, imperative Python style, four-space indentation, `snake_case` names, module-level helpers, sparse annotations, and package-relative imports.
 - Internal `App` methods use a leading underscore. Keep reusable non-GUI logic out of `app.py` and keep Tkinter imports out of helper modules.
 - Use the established Tkinter/`ttk` widgets and `LIGHT`/`DARK` palettes rather than introducing another UI framework.
-- Preserve lazy optional imports and user-facing parser errors. Avoid making one optional document dependency mandatory for unrelated formats.
+- Keep all document parser dependencies required and imported normally in `documents.py`. Preserve user-facing parsing errors for invalid or unreadable documents.
 - Preserve lowercasing and the Unicode word syntax in `documents.py`: letters/digits from all Unicode scripts, excluding underscores, with hyphens allowed only between word-character runs. Source occurrence highlighting uses the corresponding whole-word boundary expression and case-insensitive search. Chinese/Japanese text still needs spaces or another external segmentation step between words.
 - Update affected behavior and persistence code together. In particular, keep `App._save_state()`, `make_session_state()`, `normalize_state()`, and `App.__init__()` restoration defaults consistent when adding session fields.
 
@@ -110,6 +100,10 @@ A syntax check cannot validate Tkinter layout, callbacks, file dialogs, or sessi
 
 ## Deployment and packaging
 
-No executable build command, PyInstaller spec, bundled-resource configuration, installer, release process, or deployment target is configured. `resource_path()` contains `_MEIPASS` handling for `dicts`, but that alone does not constitute packaging support.
+`main.spec` configures a one-file, windowed PyInstaller build. It includes the application modules through `main.py`, the `dicts` resources, LemmInflect resources, Simplemma language data, all required document parsers, and NumPy through PyInstaller's existing hooks. The `numpy.core.multiarray` hidden import is required for LemmInflect's pickled models with NumPy 2.x. Build it from the project virtual environment with:
 
-Packaging work must explicitly include the `textscanner` modules, LemmInflect, Simplemma and its language data, NumPy, and the dictionary index/data files, account for optional parser dependencies, choose a writable session location instead of assuming the launch directory is writable, and verify startup and document parsing on every target platform. Windows-only titlebar styling in `windowing.py` already degrades to a no-op on other platforms.
+```bash
+.venv/bin/pyinstaller --clean --noconfirm main.spec
+```
+
+`resource_path()` resolves bundled dictionaries through `_MEIPASS`. All document parsers are installed through `requirements.txt` and bundled in the executable. Verify startup, translation lookup, and every document format on each target operating system. The session still uses the process working directory, so launch the executable from a writable location. Windows-only titlebar styling in `windowing.py` already degrades to a no-op on other platforms.

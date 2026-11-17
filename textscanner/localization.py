@@ -88,14 +88,6 @@ RUSSIAN = {
     "Books and documents": "Книги и документы",
     "Text files": "Текстовые файлы",
     "LIT (convert first)": "LIT (сначала конвертировать)",
-    "PDF support requires the 'pypdf' package.\nInstall it with: pip install pypdf":
-        "Для поддержки PDF требуется пакет 'pypdf'.\nУстановите его: pip install pypdf",
-    "DOCX support requires the 'python-docx' package.\nInstall it with: pip install python-docx":
-        "Для поддержки DOCX требуется пакет 'python-docx'.\nУстановите его: pip install python-docx",
-    "EPUB support requires the 'EbookLib' package.\nInstall it with: pip install EbookLib":
-        "Для поддержки EPUB требуется пакет 'EbookLib'.\nУстановите его: pip install EbookLib",
-    "RTF support requires the 'striprtf' package.\nInstall it with: pip install striprtf":
-        "Для поддержки RTF требуется пакет 'striprtf'.\nУстановите его: pip install striprtf",
     "LIT files are not supported directly.\nConvert the file to TXT or HTML first, for example with Calibre:\n\nebook-convert \"book.lit\" \"book.txt\"":
         "Файлы LIT не поддерживаются напрямую.\nСначала конвертируйте файл в TXT или HTML, например с помощью Calibre:\n\nebook-convert \"book.lit\" \"book.txt\"",
     "Unsupported file type '{extension}': {error}":

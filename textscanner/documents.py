@@ -1,6 +1,12 @@
 import os
 import re
-from html.parser import HTMLParser
+
+import docx
+import ebooklib
+import html2text
+from ebooklib import epub
+from pypdf import PdfReader
+from striprtf.striprtf import rtf_to_text
 
 from .localization import tr
 
@@ -25,34 +31,6 @@ FILE_TYPES = [
 ]
 
 
-class _TextHTMLParser(HTMLParser):
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.parts = []
-        self._hidden_depth = 0
-
-    def handle_starttag(self, tag, attrs):
-        if tag in ("script", "style"):
-            self._hidden_depth += 1
-        elif not self._hidden_depth and tag in (
-            "p", "div", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6"
-        ):
-            self.parts.append("\n")
-
-    def handle_endtag(self, tag):
-        if tag in ("script", "style") and self._hidden_depth:
-            self._hidden_depth -= 1
-        elif not self._hidden_depth and tag in ("p", "div", "li", "tr"):
-            self.parts.append("\n")
-
-    def handle_data(self, data):
-        if not self._hidden_depth:
-            self.parts.append(data)
-
-    def get_text(self):
-        return re.sub(r"[ \t]+", " ", "".join(self.parts))
-
-
 def extract_words(text):
     return [match.group(0).lower() for match in WORD_RE.finditer(text)]
 
@@ -69,28 +47,13 @@ def _read_text_bytes(path):
 
 
 def _html_to_text(raw):
-    try:
-        import html2text
-    except ImportError:
-        parser = _TextHTMLParser()
-        parser.feed(raw)
-        parser.close()
-        return parser.get_text()
     converter = html2text.HTML2Text()
     converter.ignore_links = True
     converter.ignore_images = True
     return converter.handle(raw)
 
 
-def _extract_pdf(path, language):
-    try:
-        from pypdf import PdfReader
-    except ImportError:
-        raise ValueError(tr(
-            language,
-            "PDF support requires the 'pypdf' package.\n"
-            "Install it with: pip install pypdf",
-        ))
+def _extract_pdf(path):
     parts = []
     for page in PdfReader(path).pages:
         try:
@@ -100,15 +63,7 @@ def _extract_pdf(path, language):
     return "\n".join(parts)
 
 
-def _extract_docx(path, language):
-    try:
-        import docx
-    except ImportError:
-        raise ValueError(tr(
-            language,
-            "DOCX support requires the 'python-docx' package.\n"
-            "Install it with: pip install python-docx",
-        ))
+def _extract_docx(path):
     document = docx.Document(path)
     parts = [paragraph.text for paragraph in document.paragraphs]
     for table in document.tables:
@@ -117,16 +72,7 @@ def _extract_docx(path, language):
     return "\n".join(parts)
 
 
-def _extract_epub(path, language):
-    try:
-        import ebooklib
-        from ebooklib import epub
-    except ImportError:
-        raise ValueError(tr(
-            language,
-            "EPUB support requires the 'EbookLib' package.\n"
-            "Install it with: pip install EbookLib",
-        ))
+def _extract_epub(path):
     book = epub.read_epub(path)
     parts = []
     for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
@@ -149,20 +95,12 @@ def extract_text_from_file(path, language="en"):
     if extension in plain_extensions:
         return _read_text_bytes(path)
     if extension == ".pdf":
-        return _extract_pdf(path, language)
+        return _extract_pdf(path)
     if extension == ".docx":
-        return _extract_docx(path, language)
+        return _extract_docx(path)
     if extension == ".epub":
-        return _extract_epub(path, language)
+        return _extract_epub(path)
     if extension == ".rtf":
-        try:
-            from striprtf.striprtf import rtf_to_text
-        except ImportError:
-            raise ValueError(tr(
-                language,
-                "RTF support requires the 'striprtf' package.\n"
-                "Install it with: pip install striprtf",
-            ))
         return rtf_to_text(_read_text_bytes(path))
     if extension in (".html", ".htm", ".xhtml"):
         return _html_to_text(_read_text_bytes(path))
