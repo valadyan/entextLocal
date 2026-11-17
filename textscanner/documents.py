@@ -2,6 +2,8 @@ import os
 import re
 from html.parser import HTMLParser
 
+from .localization import tr
+
 
 WORD_RE = re.compile(r"[^\W_]+(?:-[^\W_]+)*")
 WORD_CHAR_RE = re.compile(r"(?:[^\W_]|-)")
@@ -80,14 +82,15 @@ def _html_to_text(raw):
     return converter.handle(raw)
 
 
-def _extract_pdf(path):
+def _extract_pdf(path, language):
     try:
         from pypdf import PdfReader
     except ImportError:
-        raise ValueError(
+        raise ValueError(tr(
+            language,
             "PDF support requires the 'pypdf' package.\n"
-            "Install it with: pip install pypdf"
-        )
+            "Install it with: pip install pypdf",
+        ))
     parts = []
     for page in PdfReader(path).pages:
         try:
@@ -97,14 +100,15 @@ def _extract_pdf(path):
     return "\n".join(parts)
 
 
-def _extract_docx(path):
+def _extract_docx(path, language):
     try:
         import docx
     except ImportError:
-        raise ValueError(
+        raise ValueError(tr(
+            language,
             "DOCX support requires the 'python-docx' package.\n"
-            "Install it with: pip install python-docx"
-        )
+            "Install it with: pip install python-docx",
+        ))
     document = docx.Document(path)
     parts = [paragraph.text for paragraph in document.paragraphs]
     for table in document.tables:
@@ -113,15 +117,16 @@ def _extract_docx(path):
     return "\n".join(parts)
 
 
-def _extract_epub(path):
+def _extract_epub(path, language):
     try:
         import ebooklib
         from ebooklib import epub
     except ImportError:
-        raise ValueError(
+        raise ValueError(tr(
+            language,
             "EPUB support requires the 'EbookLib' package.\n"
-            "Install it with: pip install EbookLib"
-        )
+            "Install it with: pip install EbookLib",
+        ))
     book = epub.read_epub(path)
     parts = []
     for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
@@ -133,7 +138,7 @@ def _extract_epub(path):
     return "\n".join(parts)
 
 
-def extract_text_from_file(path):
+def extract_text_from_file(path, language="en"):
     extension = os.path.splitext(path)[1].lower()
     plain_extensions = {
         "", ".txt", ".text", ".log", ".md", ".markdown", ".csv", ".tsv",
@@ -144,29 +149,34 @@ def extract_text_from_file(path):
     if extension in plain_extensions:
         return _read_text_bytes(path)
     if extension == ".pdf":
-        return _extract_pdf(path)
+        return _extract_pdf(path, language)
     if extension == ".docx":
-        return _extract_docx(path)
+        return _extract_docx(path, language)
     if extension == ".epub":
-        return _extract_epub(path)
+        return _extract_epub(path, language)
     if extension == ".rtf":
         try:
             from striprtf.striprtf import rtf_to_text
         except ImportError:
-            raise ValueError(
+            raise ValueError(tr(
+                language,
                 "RTF support requires the 'striprtf' package.\n"
-                "Install it with: pip install striprtf"
-            )
+                "Install it with: pip install striprtf",
+            ))
         return rtf_to_text(_read_text_bytes(path))
     if extension in (".html", ".htm", ".xhtml"):
         return _html_to_text(_read_text_bytes(path))
     if extension == ".lit":
-        raise ValueError(
+        raise ValueError(tr(
+            language,
             "LIT files are not supported directly.\n"
             "Convert the file to TXT or HTML first, for example with Calibre:\n\n"
-            "ebook-convert \"book.lit\" \"book.txt\""
-        )
+            "ebook-convert \"book.lit\" \"book.txt\"",
+        ))
     try:
         return _read_text_bytes(path)
     except OSError as error:
-        raise ValueError(f"Unsupported file type '{extension}': {error}")
+        raise ValueError(tr(
+            language, "Unsupported file type '{extension}': {error}",
+            extension=extension, error=error,
+        ))

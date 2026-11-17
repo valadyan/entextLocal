@@ -6,6 +6,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from .documents import FILE_TYPES, WORD_CHAR_RE, extract_text_from_file
 from .library import WordLibrary
+from .localization import tr
 from .storage import (
     STATE_FILE,
     load_state,
@@ -36,6 +37,7 @@ class App(tk.Tk):
         self.scale = self._state["scale"]
         self.current_tab = self._state["current_tab"]
         self.source_path = self._state["source_path"]
+        self.language = self._state["language"]
         self.selected = set()
         self.rows_data = []
         self.sort_column = "count"
@@ -44,14 +46,19 @@ class App(tk.Tk):
         self.last_occurrence = 0
         self._source_dirty = False
 
-        self.dictionary_var = tk.StringVar(value=self.translator.dictionary_label)
+        self.dictionary_var = tk.StringVar(
+            value=self._dictionary_label(self.translator.dictionary_name)
+        )
         self.query_var = tk.StringVar()
         self.stats_var = tk.StringVar()
         self.source_stats_var = tk.StringVar()
         self.document_var = tk.StringVar()
-        self.selection_var = tk.StringVar(value="No words selected")
-        self.status_var = tk.StringVar(value="Open a document or paste text to begin.")
+        self.selection_var = tk.StringVar(value=self._tr("No words selected"))
+        self.status_var = tk.StringVar(
+            value=self._tr("Open a document or paste text to begin.")
+        )
         self.zoom_var = tk.StringVar()
+        self.title(self._tr("Text Scanner"))
 
         self._setup_style()
         self._build_ui()
@@ -61,6 +68,20 @@ class App(tk.Tk):
         self._refresh()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(100, self._show_startup_warning, self.translator.error)
+
+    def _tr(self, text, **values):
+        return tr(self.language, text, **values)
+
+    def _dictionary_label(self, dictionary_name):
+        label = next(
+            (label for name, label in self.translator.dictionaries if name == dictionary_name),
+            "",
+        )
+        source, separator, target = dictionary_name.partition("-")
+        if separator and label:
+            source_label, _, target_label = label.partition(" → ")
+            return f"{self._tr(source_label)} → {self._tr(target_label)}"
+        return label
 
     def _px(self, value):
         return max(1, int(round(value * self.scale)))
@@ -181,6 +202,7 @@ class App(tk.Tk):
         self._build_vocabulary_panel()
 
         self._update_theme_button()
+        self._update_language_button()
         self._update_zoom_label()
 
     def _build_source_panel(self):
@@ -192,18 +214,26 @@ class App(tk.Tk):
         )
         heading.pack(fill=tk.X)
         ttk.Button(
-            heading, text="Open document", style="Primary.TButton", command=self.open_document
+            heading, text=self._tr("Open document"), style="Primary.TButton",
+            command=self.open_document,
         ).pack(side=tk.LEFT)
-        ttk.Button(heading, text="New workspace", command=self.new_workspace).pack(
-            side=tk.LEFT, padx=(self._px(6), 0)
-        )
+        ttk.Button(
+            heading, text=self._tr("New workspace"), command=self.new_workspace
+        ).pack(side=tk.LEFT, padx=(self._px(6), 0))
 
         self.theme_button = ttk.Button(heading, command=self.toggle_theme)
         self.theme_button.pack(side=tk.RIGHT)
+        self.language_button = ttk.Button(
+            heading, command=self.toggle_language, width=3
+        )
+        self.language_button.pack(side=tk.RIGHT, padx=(0, self._px(6)))
 
         self.dictionary_combo = ttk.Combobox(
             heading, textvariable=self.dictionary_var,
-            values=[label for name, label in self.translator.dictionaries],
+            values=[
+                self._dictionary_label(name)
+                for name, _label in self.translator.dictionaries
+            ],
             state="readonly" if self.translator.dictionaries else "disabled",
         )
         self.dictionary_combo.pack(side=tk.RIGHT, expand=True)
@@ -240,9 +270,12 @@ class App(tk.Tk):
         ttk.Label(source_footer, textvariable=self.source_stats_var, style="Muted.TLabel").pack(
             side=tk.LEFT
         )
-        ttk.Button(source_footer, text="Rescan text  (F5)", command=self.rescan_text).pack(
-            side=tk.RIGHT
-        )
+        ttk.Button(
+            source_footer, text=self._tr("Rescan text  (F5)"), command=self.rescan_text
+        ).pack(side=tk.RIGHT)
+        ttk.Button(
+            source_footer, text=self._tr("Info"), command=self._show_app_info
+        ).pack(side=tk.RIGHT, padx=(0, self._px(6)))
 
     def _build_vocabulary_panel(self):
         right = ttk.Frame(self.paned, style="Card.TFrame")
@@ -255,7 +288,7 @@ class App(tk.Tk):
         self.tab_buttons = {}
         for key, label in (("all", "To learn"), ("learned", "Learned")):
             button = ttk.Button(
-                controls, text=label, style="Tab.TButton",
+                controls, text=self._tr(label), style="Tab.TButton",
                 command=lambda tab=key: self.switch_tab(tab),
             )
             button.pack(side=tk.LEFT, padx=(0, self._px(4)))
@@ -269,12 +302,12 @@ class App(tk.Tk):
             side=tk.LEFT, padx=(self._px(4), self._px(6))
         )
 
-        ttk.Button(controls, text="Export table", command=self.save_csv).pack(
-            side=tk.RIGHT
-        )
-        ttk.Button(controls, text="Import table", command=self.load_csv).pack(
-            side=tk.RIGHT, padx=(0, self._px(6))
-        )
+        ttk.Button(
+            controls, text=self._tr("Export table"), command=self.save_csv
+        ).pack(side=tk.RIGHT)
+        ttk.Button(
+            controls, text=self._tr("Import table"), command=self.load_csv
+        ).pack(side=tk.RIGHT, padx=(0, self._px(6)))
 
         ttk.Label(right, textvariable=self.stats_var, style="Muted.TLabel").pack(
             anchor="center", pady=(self._px(4), 0)
@@ -289,10 +322,10 @@ class App(tk.Tk):
             table_frame, columns=columns, show="headings", selectmode="extended", height=5
         )
         self._columns = (
-            ("word", 180, "Word", "w"),
-            ("count", 95, "Count", "center"),
-            ("translation", 240, "Translation", "w"),
-            ("actions", 125, "Action", "center"),
+            ("word", 180, self._tr("Word"), "w"),
+            ("count", 95, self._tr("Count"), "center"),
+            ("translation", 240, self._tr("Translation"), "w"),
+            ("actions", 125, self._tr("Action"), "center"),
         )
         for column, width, label, anchor in self._columns:
             self.tree.column(column, width=self._px(width), anchor=anchor, stretch=True)
@@ -313,7 +346,6 @@ class App(tk.Tk):
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self.tree.bind("<ButtonPress-1>", self._on_tree_press)
         self.tree.bind("<ButtonRelease-1>", self._on_tree_release)
-        self.tree.bind("<Double-Button-1>", self._on_translation_double_click)
         self.tree.bind("<Motion>", self._on_tree_motion)
         self.tree.bind("<Delete>", lambda event: self.remove_selected())
         self.tree.bind("<Return>", lambda event: self.toggle_selected())
@@ -327,15 +359,22 @@ class App(tk.Tk):
         actions = ttk.Frame(selection_bar, style="Card.TFrame")
         actions.pack(fill=tk.X)
 
-        self.learn_button = ttk.Button(actions, text="Mark learned", command=self.learn_selected)
+        self.learn_button = ttk.Button(
+            actions, text=self._tr("Mark learned"), command=self.learn_selected
+        )
         self.learn_button.pack(side=tk.LEFT)
 
-        self.return_button = ttk.Button(actions, text="Move to learn", command=self.unlearn_selected)
+        self.return_button = ttk.Button(
+            actions, text=self._tr("Move to learn"), command=self.unlearn_selected
+        )
         self.remove_button = ttk.Button(
-            actions, text="Remove", style="Danger.TButton", command=self.remove_selected
+            actions, text=self._tr("Remove"), style="Danger.TButton",
+            command=self.remove_selected,
         )
         self.remove_button.pack(side=tk.RIGHT)
-        self.clear_button = ttk.Button(actions, text="Clear selection", command=self.clear_selection)
+        self.clear_button = ttk.Button(
+            actions, text=self._tr("Clear selection"), command=self.clear_selection
+        )
         self.clear_button.pack(side=tk.RIGHT)
 
     def _bind_shortcuts(self):
@@ -362,32 +401,46 @@ class App(tk.Tk):
     def _show_startup_warning(self, error):
         if error:
             messagebox.showwarning(
-                "Translation dictionary",
-                f'Failed to load "{self.translator.dictionary_name}":\n{error}\n\n'
-                "Translations will be empty.",
+                self._tr("Translation dictionary"),
+                self._tr(
+                    "Failed to load \"{name}\":\n{error}\n\nTranslations will be empty.",
+                    name=self.translator.dictionary_name, error=error,
+                ),
                 parent=self,
             )
 
     def _on_dictionary_changed(self, event=None):
-        dictionary_name = self.translator.name_for_label(self.dictionary_var.get())
+        selected_label = self.dictionary_var.get()
+        dictionary_name = next(
+            (
+                name for name, _label in self.translator.dictionaries
+                if self._dictionary_label(name) == selected_label
+            ),
+            "",
+        )
         if not dictionary_name or dictionary_name == self.translator.dictionary_name:
             return
         error = self.translator.switch(dictionary_name)
         if error:
-            self.dictionary_var.set(self.translator.dictionary_label)
+            self.dictionary_var.set(
+                self._dictionary_label(self.translator.dictionary_name)
+            )
             messagebox.showwarning(
-                "Translation dictionary",
-                f'Failed to load "{dictionary_name}":\n{error}\n\n'
-                "The previous dictionary is still active.",
+                self._tr("Translation dictionary"),
+                self._tr(
+                    "Failed to load \"{name}\":\n{error}\n\nThe previous dictionary is still active.",
+                    name=dictionary_name, error=error,
+                ),
                 parent=self,
             )
             return
         self.selected.clear()
         self._refresh()
-        self.status_var.set(
-            f"Using {self.dictionary_var.get()}: "
-            f"{len(self.translator.full_translations)} entries."
-        )
+        self.status_var.set(self._tr(
+            "Using {dictionary}: {count} entries.",
+            dictionary=self.dictionary_var.get(),
+            count=len(self.translator.full_translations),
+        ))
 
     def _restore_state(self):
         try:
@@ -414,17 +467,21 @@ class App(tk.Tk):
     def _update_source_stats(self):
         content = self.text.get("1.0", "end-1c")
         lines = len(content.splitlines()) if content else 0
-        suffix = " · unsaved scan changes" if self._source_dirty else ""
+        suffix = self._tr(" · unsaved scan changes") if self._source_dirty else ""
         if self.source_path:
             name = os.path.basename(self.source_path)
         elif content:
-            name = "Pasted or edited text"
+            name = self._tr("Pasted or edited text")
         else:
-            name = "No document loaded"
+            name = self._tr("No document loaded")
         self.document_var.set(name)
-        self.source_stats_var.set(f"{name} · {lines} lines · {len(content)} characters{suffix}")
-        
+        self.source_stats_var.set(self._tr(
+            "{name} · {lines} lines · {characters} characters{suffix}",
+            name=name, lines=lines, characters=len(content), suffix=suffix,
+        ))
+
     def _refresh(self):
+        self._hide_translation_hover()
         translations = self.translator.update(self.library.counts)
         self._update_tab_labels()
         self._update_sort_headings()
@@ -439,7 +496,9 @@ class App(tk.Tk):
         selected_ids = []
         for index, (word, count) in enumerate(entries):
             translation = translations.get(word, "")
-            action = "Move to learn" if self.current_tab == "learned" else "Mark learned"
+            action = self._tr(
+                "Move to learn" if self.current_tab == "learned" else "Mark learned"
+            )
             tags = ["odd" if index % 2 else "even"]
             if not translation:
                 tags.append("untranslated")
@@ -456,7 +515,10 @@ class App(tk.Tk):
 
     def _update_tab_labels(self):
         to_learn = len(self.library.counts) - len(self.library.learned)
-        labels = {"all": f"To learn  {to_learn}", "learned": f"Learned  {len(self.library.learned)}"}
+        labels = {
+            "all": f"{self._tr('To learn')}  {to_learn}",
+            "learned": f"{self._tr('Learned')}  {len(self.library.learned)}",
+        }
         for key, button in self.tab_buttons.items():
             button.configure(
                 text=labels[key],
@@ -477,22 +539,25 @@ class App(tk.Tk):
             self.current_tab, self.query_var.get(), self.translator.translations
         )
         if not self.library.counts:
-            self.stats_var.set("Your word list is empty")
+            self.stats_var.set(self._tr("Your word list is empty"))
             return
         translated = sum(
             bool(self.translator.translations.get(word)) for word, _count in self.rows_data
         )
-        text = (
-            f"{totals['visible_occurrences']} occurrences"
-            f" · {translated} translated"
+        text = self._tr(
+            "{occurrences} occurrences · {translated} translated",
+            occurrences=totals["visible_occurrences"], translated=translated,
         )
         if self.query_var.get().strip():
-            text += f" · of {totals['total_words']} total"
+            text += self._tr(" · of {total} total", total=totals["total_words"])
         self.stats_var.set(text)
 
     def _update_selection_ui(self):
         count = len(self.selected)
-        self.selection_var.set("No words selected" if not count else f"{count} selected")
+        self.selection_var.set(
+            self._tr("No words selected") if not count
+            else self._tr("{count} selected", count=count)
+        )
         state = "normal" if count else "disabled"
         self.clear_button.configure(state=state)
         self.remove_button.configure(state=state)
@@ -516,6 +581,8 @@ class App(tk.Tk):
         self._update_selection_ui()
 
     def _on_tree_press(self, event):
+        self._drag_start_item = None
+        self._dragging = False
         if self.tree.identify_region(event.x, event.y) != "cell":
             return
         item = self.tree.identify_row(event.y)
@@ -527,15 +594,39 @@ class App(tk.Tk):
                 self.library.mark_unlearned([word])
             self.selected.discard(word)
             self._refresh()
-            self.status_var.set(f"Updated '{word}'.")
+            self.status_var.set(self._tr("Updated '{word}'.", word=word))
             return "break"
+        if item:
+            self._drag_start_item = item
+
+    def _on_tree_drag(self, event):
+        start_item = getattr(self, "_drag_start_item", None)
+        item = self.tree.identify_row(event.y)
+        if not start_item or not item:
+            return
+        rows = self.tree.get_children()
+        start = self.tree.index(start_item)
+        end = self.tree.index(item)
+        first, last = sorted((start, end))
+        self.tree.selection_set(rows[first:last + 1])
+        self.tree.focus(item)
+        self._dragging = True
+        self._on_tree_select()
+        return "break"
 
     def _on_tree_release(self, event):
+        was_dragging = getattr(self, "_dragging", False)
+        self._drag_start_item = None
+        self._dragging = False
+        if was_dragging:
+            return "break"
         if event.state & 0x0005 or self.tree.identify_region(event.x, event.y) != "cell":
             return
         item = self.tree.identify_row(event.y)
         if not item or self.tree.identify_column(event.x) == "#4":
             return
+        if self.tree.identify_column(event.x) == "#3":
+            return self._on_translation_click(event)
         word = self._row_word(item)
         if word == self.last_click_word:
             self.last_occurrence += 1
@@ -544,7 +635,7 @@ class App(tk.Tk):
             self.last_click_word = word
         self._jump_to_word(word, self.last_occurrence)
 
-    def _on_translation_double_click(self, event):
+    def _on_translation_click(self, event):
         if self.tree.identify_region(event.x, event.y) != "cell":
             return
         if self.tree.identify_column(event.x) != "#3":
@@ -561,7 +652,7 @@ class App(tk.Tk):
     def _show_translation(self, word, matched_word, definition):
         window = tk.Toplevel(self)
         title = word if word == matched_word else f"{word} → {matched_word}"
-        window.title(f"Translation: {title}")
+        window.title(self._tr("Translation: {title}", title=title))
         window.transient(self)
         window.configure(bg=self.palette["bg"])
         window.minsize(self._px(360), self._px(240))
@@ -589,15 +680,145 @@ class App(tk.Tk):
 
         footer = ttk.Frame(window, padding=(self._px(12), 0, self._px(12), self._px(12)))
         footer.pack(fill=tk.X)
-        ttk.Button(footer, text="Close", command=window.destroy).pack(side=tk.RIGHT)
+        close_button = ttk.Button(
+            footer, text=self._tr("Close"), command=window.destroy
+        )
+        close_button.pack(side=tk.RIGHT)
+
+        def close_if_unfocused():
+            if not window.winfo_exists():
+                return
+            focused = window.focus_get()
+            window_path = str(window)
+            if focused is None or (
+                focused != window and not str(focused).startswith(window_path + ".")
+            ):
+                window.destroy()
+
+        def check_focus(event=None):
+            window.after_idle(close_if_unfocused)
+
+        for widget in (window, text, close_button):
+            widget.bind("<FocusOut>", check_focus)
+        window.bind("<Escape>", lambda event: window.destroy())
+        text.focus_set()
+        set_titlebar_color(window, self.palette["card"], dark=self.theme_name == "dark")
+
+    def _show_app_info(self):
+        window = tk.Toplevel(self)
+        window.title(self._tr("Info"))
+        window.transient(self)
+        window.configure(bg=self.palette["bg"])
+        window.minsize(self._px(380), self._px(320))
+        window.geometry(f"{self._px(560)}x{self._px(560)}")
+
+        frame = ttk.Frame(window, padding=self._px(12))
+        frame.pack(fill=tk.BOTH, expand=True)
+        text = tk.Text(
+            frame, wrap=tk.WORD, relief="flat", bd=0,
+            padx=self._px(10), pady=self._px(10), font=("Segoe UI", self._px(10)),
+            bg=self.palette["input"], fg=self.palette["text"],
+            selectbackground=self.palette["accent_soft2"],
+            selectforeground=self.palette["text"], spacing1=self._px(2),
+            spacing3=self._px(2), highlightthickness=1,
+            highlightbackground=self.palette["border"], highlightcolor=self.palette["accent"],
+        )
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
+        text.configure(yscrollcommand=scrollbar.set)
+        frame.rowconfigure(0, weight=1)
+        frame.columnconfigure(0, weight=1)
+        text.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        sections = (
+            ("About Text Scanner", "Text Scanner creates a frequency-sorted vocabulary from documents or pasted text. You can edit the source, track learned words, view translations, and import or export CSV tables."),
+            ("How to use", "1. Open a document or paste text into the source editor.\n2. Press Rescan text or F5 after editing.\n3. Click a word to find its occurrences; click a translation for the full entry.\n4. Select words to mark them learned, return them to the learning list, or remove them."),
+            ("Shortcuts", "Ctrl+O — open document\nCtrl+S — export CSV\nCtrl+N — new workspace\nCtrl+F — filter words\nF5 — rescan text\nCtrl+A — select all visible words\nDelete — remove selected words\nEscape — clear filter or selection\nCtrl + / - / 0 — zoom in, out, or reset"),
+        )
+        content = "\n\n".join(
+            f"{self._tr(heading)}\n{self._tr(body)}" for heading, body in sections
+        )
+        text.insert("1.0", content)
+        text.configure(state="disabled")
+
+        footer = ttk.Frame(window, padding=(self._px(12), 0, self._px(12), self._px(12)))
+        footer.pack(fill=tk.X)
+        ttk.Button(
+            footer, text=self._tr("Close"), command=window.destroy
+        ).pack(side=tk.RIGHT)
         window.bind("<Escape>", lambda event: window.destroy())
         text.focus_set()
         set_titlebar_color(window, self.palette["card"], dark=self.theme_name == "dark")
 
     def _on_tree_motion(self, event):
+        if event.state & 0x0100:
+            result = self._on_tree_drag(event)
+            if result:
+                return result
         item = self.tree.identify_row(event.y)
-        is_clickable = bool(item) and self.tree.identify_column(event.x) in ("#3", "#4")
+        column = self.tree.identify_column(event.x)
+        is_clickable = bool(item) and column in ("#3", "#4")
         self.tree.configure(cursor="hand2" if is_clickable else "")
+        hovered = (
+            item if item and column == "#3"
+            and self.tree.set(item, "translation") != "—" else None
+        )
+        self._update_translation_hover(hovered)
+
+    def _update_translation_hover(self, item):
+        if not item:
+            self._hide_translation_hover()
+            return
+        bounds = self.tree.bbox(item, "#3")
+        if not bounds:
+            self._hide_translation_hover()
+            return
+        label = getattr(self, "_translation_hover_label", None)
+        if label is None or not label.winfo_exists():
+            label = tk.Label(self.tree, padx=0, pady=0, anchor="w", cursor="hand2")
+            self._translation_hover_label = label
+            bindings = (
+                ("<ButtonPress-1>", self._on_tree_press),
+                ("<ButtonRelease-1>", self._on_tree_release),
+                ("<B1-Motion>", self._on_tree_motion),
+                ("<Motion>", self._on_tree_motion),
+            )
+            for sequence, handler in bindings:
+                label.bind(
+                    sequence,
+                    lambda event, callback=handler:
+                        self._forward_translation_hover_event(event, callback),
+                )
+        tags = self.tree.item(item, "tags")
+        if item in self.tree.selection():
+            background = self.palette["selection"]
+        else:
+            background = self.palette["zebra"] if "odd" in tags else self.palette["row"]
+        label.configure(
+            text=self.tree.set(item, "translation"), background=background,
+            foreground=self.palette["accent"],
+            font=("Segoe UI", self._px(10), "underline"),
+        )
+        x, y, _width, height = bounds
+        label.place(x=x + 4, y=y, height=height)
+        self._hovered_translation = item
+
+    def _hide_translation_hover(self):
+        label = getattr(self, "_translation_hover_label", None)
+        if label is not None:
+            try:
+                if label.winfo_exists():
+                    label.place_forget()
+                else:
+                    self._translation_hover_label = None
+            except tk.TclError:
+                self._translation_hover_label = None
+        self._hovered_translation = None
+
+    def _forward_translation_hover_event(self, event, callback):
+        label = self._translation_hover_label
+        event.x += label.winfo_x()
+        event.y += label.winfo_y()
+        return callback(event)
 
     def _row_word(self, item):
         return self.rows_data[int(item[3:])][0]
@@ -623,16 +844,19 @@ class App(tk.Tk):
         self.text.tag_remove("highlight", "1.0", "end")
         self.text.tag_remove("current", "1.0", "end")
         if not positions:
-            self.status_var.set(f"'{word}' is not present in the current source text.")
+            self.status_var.set(self._tr(
+                "'{word}' is not present in the current source text.", word=word
+            ))
             return
         for start, end in positions:
             self.text.tag_add("highlight", start, end)
         start, end = positions[occurrence % len(positions)]
         self.text.tag_add("current", start, end)
         self.text.see(start)
-        self.status_var.set(
-            f"'{word}': occurrence {occurrence % len(positions) + 1} of {len(positions)}"
-        )
+        self.status_var.set(self._tr(
+            "'{word}': occurrence {occurrence} of {total}",
+            word=word, occurrence=occurrence % len(positions) + 1, total=len(positions),
+        ))
 
     def switch_tab(self, tab):
         self.current_tab = tab
@@ -653,14 +877,18 @@ class App(tk.Tk):
         self.library.mark_learned(words)
         self.selected.clear()
         self._refresh()
-        self.status_var.set(f"Marked {len(words)} words as learned.")
+        self.status_var.set(self._tr(
+            "Marked {count} words as learned.", count=len(words)
+        ))
 
     def unlearn_selected(self):
         words = set(self.selected)
         self.library.mark_unlearned(words)
         self.selected.clear()
         self._refresh()
-        self.status_var.set(f"Moved {len(words)} words back to the learning list.")
+        self.status_var.set(self._tr(
+            "Moved {count} words back to the learning list.", count=len(words)
+        ))
 
     def toggle_selected(self):
         if self.current_tab == "all":
@@ -674,13 +902,15 @@ class App(tk.Tk):
         if not words:
             return "break"
         if not messagebox.askyesno(
-            "Remove words", f"Remove {len(words)} words from this workspace?", parent=self
+            self._tr("Remove words"),
+            self._tr("Remove {count} words from this workspace?", count=len(words)),
+            parent=self,
         ):
             return "break"
         self.library.remove(words)
         self.selected.clear()
         self._refresh()
-        self.status_var.set(f"Removed {len(words)} words.")
+        self.status_var.set(self._tr("Removed {count} words.", count=len(words)))
         return "break"
 
     def clear_selection(self):
@@ -712,8 +942,10 @@ class App(tk.Tk):
         if not self.library.counts and not self.text.get("1.0", "end-1c").strip():
             return True
         return messagebox.askyesno(
-            "Replace workspace",
-            "Replace the current text and word counts? Your previous session is saved only when the app closes.",
+            self._tr("Replace workspace"),
+            self._tr(
+                "Replace the current text and word counts? Your previous session is saved only when the app closes."
+            ),
             parent=self,
         )
 
@@ -726,27 +958,32 @@ class App(tk.Tk):
         self.query_var.set("")
         self._set_text("")
         self._refresh()
-        self.status_var.set("New workspace ready.")
+        self.status_var.set(self._tr("New workspace ready."))
 
     def open_document(self):
-        path = filedialog.askopenfilename(parent=self, filetypes=FILE_TYPES)
+        file_types = [(self._tr(label), patterns) for label, patterns in FILE_TYPES]
+        path = filedialog.askopenfilename(parent=self, filetypes=file_types)
         if not path:
             return
         try:
-            text = extract_text_from_file(path)
+            text = extract_text_from_file(path, self.language)
         except (ValueError, OSError) as error:
-            messagebox.showerror("Open document", str(error), parent=self)
+            messagebox.showerror(self._tr("Open document"), str(error), parent=self)
             return
         except Exception as error:
             messagebox.showerror(
-                "Open document", f"The document could not be parsed:\n{error}", parent=self
+                self._tr("Open document"),
+                self._tr("The document could not be parsed:\n{error}", error=error),
+                parent=self,
             )
             return
         if not text.strip():
             messagebox.showwarning(
-                "Open document",
-                f"No text could be extracted from {os.path.basename(path)}.\n\n"
-                "If this is a scanned PDF, OCR is required first.",
+                self._tr("Open document"),
+                self._tr(
+                    "No text could be extracted from {name}.\n\nIf this is a scanned PDF, OCR is required first.",
+                    name=os.path.basename(path),
+                ),
                 parent=self,
             )
             return
@@ -755,7 +992,9 @@ class App(tk.Tk):
         self.library.clear()
         unique_count = self.library.replace_text(text)
         if not unique_count:
-            messagebox.showwarning("Scan document", "No words found in the text.", parent=self)
+            messagebox.showwarning(
+                self._tr("Scan document"), self._tr("No words found in the text."), parent=self
+            )
             return
         self.source_path = path
         self.current_tab = "all"
@@ -763,60 +1002,85 @@ class App(tk.Tk):
         self.query_var.set("")
         self._set_text(text)
         self._refresh()
-        self.status_var.set(
-            f"Loaded {os.path.basename(path)}: {unique_count} unique words, "
-            f"{sum(self.library.counts.values())} occurrences."
-        )
+        self.status_var.set(self._tr(
+            "Loaded {name}: {unique} unique words, {occurrences} occurrences.",
+            name=os.path.basename(path), unique=unique_count,
+            occurrences=sum(self.library.counts.values()),
+        ))
 
     def rescan_text(self):
         text = self.text.get("1.0", "end-1c")
         if not text.strip():
-            messagebox.showinfo("Rescan text", "Paste or open some text first.", parent=self)
+            messagebox.showinfo(
+                self._tr("Rescan text"), self._tr("Paste or open some text first."), parent=self
+            )
             return
         count = self.library.replace_text(text)
         if not count:
-            messagebox.showwarning("Rescan text", "No words found in the text.", parent=self)
+            messagebox.showwarning(
+                self._tr("Rescan text"), self._tr("No words found in the text."), parent=self
+            )
             return
         self.selected.clear()
         self._source_dirty = False
         self.text.edit_modified(False)
         self._update_source_stats()
         self._refresh()
-        self.status_var.set(f"Scan complete: {count} unique words.")
+        self.status_var.set(self._tr("Scan complete: {count} unique words.", count=count))
 
     def load_csv(self):
-        path = filedialog.askopenfilename(
-            parent=self, filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
-        )
+        file_types = [
+            (self._tr("CSV files"), "*.csv"), (self._tr("All files"), "*.*")
+        ]
+        path = filedialog.askopenfilename(parent=self, filetypes=file_types)
         if not path:
             return
         try:
             counts = read_word_table(path)
         except (OSError, csv.Error) as error:
-            messagebox.showerror("Import CSV", f"Failed to load the CSV file:\n{error}", parent=self)
+            messagebox.showerror(
+                self._tr("Import CSV"),
+                self._tr("Failed to load the CSV file:\n{error}", error=error),
+                parent=self,
+            )
             return
         self.library.merge_counts(counts, learned=self.current_tab == "learned")
         self._refresh()
-        self.status_var.set(f"Imported {len(counts)} words into the active tab.")
+        self.status_var.set(self._tr(
+            "Imported {count} words into the active tab.", count=len(counts)
+        ))
 
     def save_csv(self):
         entries = self.library.tab_entries(self.current_tab, self.translator.translations)
         if not entries:
-            messagebox.showinfo("Export CSV", "The active tab has no words to export.", parent=self)
+            messagebox.showinfo(
+                self._tr("Export CSV"),
+                self._tr("The active tab has no words to export."),
+                parent=self,
+            )
             return
+        file_types = [
+            (self._tr("CSV files"), "*.csv"), (self._tr("All files"), "*.*")
+        ]
         path = filedialog.asksaveasfilename(
             parent=self, defaultextension=".csv",
             initialfile=f"{self.current_tab}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.csv",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            filetypes=file_types,
         )
         if not path:
             return
         try:
             write_word_table(path, entries, self.translator.translations)
         except OSError as error:
-            messagebox.showerror("Export CSV", f"Failed to save the file:\n{error}", parent=self)
+            messagebox.showerror(
+                self._tr("Export CSV"),
+                self._tr("Failed to save the file:\n{error}", error=error),
+                parent=self,
+            )
             return
-        self.status_var.set(f"Exported {len(entries)} words to {path}.")
+        self.status_var.set(self._tr(
+            "Exported {count} words to {path}.", count=len(entries), path=path
+        ))
 
     def toggle_theme(self):
         self.theme_name = "dark" if self.theme_name == "light" else "light"
@@ -824,7 +1088,20 @@ class App(tk.Tk):
         self._rebuild_ui()
 
     def _update_theme_button(self):
-        self.theme_button.configure(text="Use light theme" if self.theme_name == "dark" else "Use dark theme")
+        self.theme_button.configure(text=self._tr(
+            "Use light theme" if self.theme_name == "dark" else "Use dark theme"
+        ))
+
+    def toggle_language(self):
+        self.language = "ru" if self.language == "en" else "en"
+        self.dictionary_var.set(
+            self._dictionary_label(self.translator.dictionary_name)
+        )
+        self.status_var.set(self._tr("Open a document or paste text to begin."))
+        self._rebuild_ui()
+
+    def _update_language_button(self):
+        self.language_button.configure(text="EN" if self.language == "ru" else "RU")
 
     def _rebuild_ui(self):
         geometry = self.geometry()
@@ -833,6 +1110,7 @@ class App(tk.Tk):
         dirty = self._source_dirty
         for child in list(self.winfo_children()):
             child.destroy()
+        self.title(self._tr("Text Scanner"))
         self._setup_style()
         self._build_ui()
         self.geometry(geometry)
@@ -860,7 +1138,7 @@ class App(tk.Tk):
         self._rebuild_ui()
 
     def _update_zoom_label(self):
-        self.zoom_var.set(f"Zoom {round(self.scale * 100)}%")
+        self.zoom_var.set(self._tr("Zoom {percent}%", percent=round(self.scale * 100)))
 
     def _on_ctrl_wheel(self, event):
         return self._zoom_by(1 if event.delta > 0 else -1)
@@ -876,12 +1154,15 @@ class App(tk.Tk):
             scale=self.scale,
             source_path=self.source_path,
             translation_dictionary=self.translator.dictionary_name,
+            language=self.language,
         )
         try:
             save_state(state)
         except OSError as error:
             messagebox.showwarning(
-                "Session", f'Failed to save "{STATE_FILE}":\n{error}', parent=self
+                self._tr("Session"),
+                self._tr("Failed to save \"{path}\":\n{error}", path=STATE_FILE, error=error),
+                parent=self,
             )
 
     def _on_close(self):

@@ -19,6 +19,9 @@ def normalize_state(state):
     current_tab = state.get("current_tab", "all")
     if current_tab not in ("all", "learned"):
         current_tab = "all"
+    language = state.get("language", "en")
+    if language not in ("en", "ru"):
+        language = "en"
     geometry = state.get("geometry", "")
     text = state.get("text", "")
     source_path = state.get("source_path", "")
@@ -32,12 +35,13 @@ def normalize_state(state):
         "scale": scale,
         "source_path": source_path if isinstance(source_path, str) else "",
         "translation_dictionary": state.get("translation_dictionary"),
+        "language": language,
     }
 
 
 def make_session_state(
     geometry, text, counts, learned, current_tab, theme_name, scale, source_path,
-    translation_dictionary,
+    translation_dictionary, language="en",
 ):
     return {
         "geometry": geometry,
@@ -49,6 +53,7 @@ def make_session_state(
         "scale": scale,
         "source_path": source_path,
         "translation_dictionary": translation_dictionary,
+        "language": language,
     }
 
 
