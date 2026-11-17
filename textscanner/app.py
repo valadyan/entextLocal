@@ -170,22 +170,6 @@ class App(tk.Tk):
         style.map("Vertical.TScrollbar", background=[("active", palette["muted"])])
 
     def _build_ui(self):
-        toolbar = ttk.Frame(self, padding=(self._px(12), self._px(6)))
-        toolbar.pack(fill=tk.X)
-
-        self.theme_button = ttk.Button(toolbar, command=self.toggle_theme)
-        self.theme_button.pack(side=tk.LEFT)
-
-        self.dictionary_combo = ttk.Combobox(
-            toolbar, textvariable=self.dictionary_var,
-            values=[label for name, label in self.translator.dictionaries],
-            state="readonly" if self.translator.dictionaries else "disabled",
-        )
-
-        self.dictionary_combo.pack(side=tk.RIGHT, expand=True)
-        self.dictionary_combo.bind("<<ComboboxSelected>>", self._on_dictionary_changed)
-
-
         self.paned = tk.PanedWindow(
             self, orient=tk.HORIZONTAL, bg=self.palette["bg"], sashwidth=self._px(5),
             sashrelief=tk.FLAT, bd=0, opaqueresize=True,
@@ -213,6 +197,18 @@ class App(tk.Tk):
         ttk.Button(heading, text="New workspace", command=self.new_workspace).pack(
             side=tk.LEFT, padx=(self._px(6), 0)
         )
+
+        self.theme_button = ttk.Button(heading, command=self.toggle_theme)
+        self.theme_button.pack(side=tk.RIGHT)
+
+        self.dictionary_combo = ttk.Combobox(
+            heading, textvariable=self.dictionary_var,
+            values=[label for name, label in self.translator.dictionaries],
+            state="readonly" if self.translator.dictionaries else "disabled",
+        )
+        self.dictionary_combo.pack(side=tk.RIGHT, expand=True)
+        self.dictionary_combo.bind("<<ComboboxSelected>>", self._on_dictionary_changed)
+
 
         text_frame = ttk.Frame(
             left, style="Card.TFrame", padding=(self._px(8), 0, self._px(8), 0)
