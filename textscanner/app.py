@@ -210,7 +210,7 @@ class App(tk.Tk):
         self.paned.add(left, minsize=self._px(300), stretch="always")
 
         heading = ttk.Frame(
-            left, style="Card.TFrame", padding=(self._px(8), self._px(8), self._px(8), self._px(8))
+            left, style="Card.TFrame", padding=(self._px(8), self._px(8), self._px(8), 0)
         )
         heading.pack(fill=tk.X)
         ttk.Button(
@@ -239,6 +239,9 @@ class App(tk.Tk):
         self.dictionary_combo.pack(side=tk.RIGHT, expand=True)
         self.dictionary_combo.bind("<<ComboboxSelected>>", self._on_dictionary_changed)
 
+        ttk.Label(left, textvariable=self.status_var, style="Muted.TLabel").pack(
+            anchor="center", pady=(self._px(4), 0)
+        )
 
         text_frame = ttk.Frame(
             left, style="Card.TFrame", padding=(self._px(8), 0, self._px(8), 0)
@@ -685,22 +688,28 @@ class App(tk.Tk):
         )
         close_button.pack(side=tk.RIGHT)
 
-        def close_if_unfocused():
-            if not window.winfo_exists():
-                return
-            focused = window.focus_get()
-            window_path = str(window)
-            if focused is None or (
-                focused != window and not str(focused).startswith(window_path + ".")
-            ):
+        def close_on_outside_click(event):
+            try:
+                if not window.winfo_exists():
+                    return
+                widget = event.widget
+                while widget is not None:
+                    if widget == window:
+                        return
+                    widget = getattr(widget, "master", None)
                 window.destroy()
+            except tk.TclError:
+                pass
 
-        def check_focus(event=None):
-            window.after_idle(close_if_unfocused)
+        def remove_outside_binding(event):
+            if event.widget == window:
+                window.unbind_all("<ButtonPress-1>")
 
-        for widget in (window, text, close_button):
-            widget.bind("<FocusOut>", check_focus)
+        window.bind_all("<ButtonPress-1>", close_on_outside_click, add="+")
+        window.bind("<Destroy>", remove_outside_binding)
         window.bind("<Escape>", lambda event: window.destroy())
+        window.lift()
+        window.focus_force()
         text.focus_set()
         set_titlebar_color(window, self.palette["card"], dark=self.theme_name == "dark")
 
@@ -710,7 +719,7 @@ class App(tk.Tk):
         window.transient(self)
         window.configure(bg=self.palette["bg"])
         window.minsize(self._px(380), self._px(320))
-        window.geometry(f"{self._px(560)}x{self._px(560)}")
+        window.geometry(f"{self._px(560)}x{self._px(660)}")
 
         frame = ttk.Frame(window, padding=self._px(12))
         frame.pack(fill=tk.BOTH, expand=True)
@@ -730,7 +739,7 @@ class App(tk.Tk):
         text.grid(row=0, column=0, sticky="nsew")
         scrollbar.grid(row=0, column=1, sticky="ns")
         sections = (
-            ("About Text Scanner", "Text Scanner creates a frequency-sorted vocabulary from documents or pasted text. You can edit the source, track learned words, view translations, and import or export CSV tables."),
+            ("About Text Scanner (https://github.com/valadyan/entextLocal)", "Text Scanner creates a frequency-sorted vocabulary from documents or pasted text. You can edit the source, track learned words, view translations, and import or export CSV tables."),
             ("How to use", "1. Open a document or paste text into the source editor.\n2. Press Rescan text or F5 after editing.\n3. Click a word to find its occurrences; click a translation for the full entry.\n4. Select words to mark them learned, return them to the learning list, or remove them."),
             ("Shortcuts", "Ctrl+O — open document\nCtrl+S — export CSV\nCtrl+N — new workspace\nCtrl+F — filter words\nF5 — rescan text\nCtrl+A — select all visible words\nDelete — remove selected words\nEscape — clear filter or selection\nCtrl + / - / 0 — zoom in, out, or reset"),
         )
