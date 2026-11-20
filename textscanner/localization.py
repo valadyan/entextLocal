@@ -106,6 +106,8 @@ RUSSIAN = {
     "Spanish": "Испанский",
     "Swedish": "Шведский",
     "Chinese": "Китайский",
+    "Loading {name}...": "Читаем {name}...",
+    "Preparing dictionary": "Готовим словарь"
 }
 
 

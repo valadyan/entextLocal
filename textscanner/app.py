@@ -1,5 +1,7 @@
 import csv
 import os
+import threading
+import time
 import tkinter as tk
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
@@ -19,6 +21,8 @@ from .storage import (
 from .theme import DARK, LIGHT
 from .translations import TranslationManager
 from .windowing import set_titlebar_color
+
+from .waiting_window import WaitingWindow 
 
 
 class App(tk.Tk):
@@ -968,24 +972,57 @@ class App(tk.Tk):
         self._set_text("")
         self._refresh()
         self.status_var.set(self._tr("New workspace ready."))
-
+            
     def open_document(self):
+        if not self._confirm_discard():
+            return
+        
         file_types = [(self._tr(label), patterns) for label, patterns in FILE_TYPES]
         path = filedialog.askopenfilename(parent=self, filetypes=file_types)
         if not path:
             return
-        try:
-            text = extract_text_from_file(path, self.language)
-        except (ValueError, OSError) as error:
-            messagebox.showerror(self._tr("Open document"), str(error), parent=self)
+
+        # --- Loading window ---------------------------------------------------
+
+        waiting = WaitingWindow(
+            self,
+            title="Processing",
+            message=self._tr("Loading {name}...", name=os.path.basename(path)),
+            # gif_path="anim2.gif"   # <-- path to your GIF 
+        )
+
+        result = {"text": None, "error": None}
+        def worker():
+            try:
+                result["text"] = extract_text_from_file(path, self.language)
+            except BaseException as exc:  # capture everything for the UI thread
+                result["error"] = exc
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+
+        # Pump the event loop until the worker finishes so the loading window animates.
+        while thread.is_alive():
+            self.update()
+            time.sleep(0.02)
+        # ----------------------------------------------------------------------
+
+        if result["error"] is not None:
+            error = result["error"]
+            if isinstance(error, (ValueError, OSError)):
+                messagebox.showerror(self._tr("Open document"), str(error), parent=self)
+            else:
+                messagebox.showerror(
+                    self._tr("Open document"),
+                    self._tr("The document could not be parsed:\n{error}", error=error),
+                    parent=self,
+                )
+            waiting.close()
             return
-        except Exception as error:
-            messagebox.showerror(
-                self._tr("Open document"),
-                self._tr("The document could not be parsed:\n{error}", error=error),
-                parent=self,
-            )
-            return
+
+        waiting.update_message(self._tr("Preparing dictionary"))
+
+        text = result["text"]
         if not text.strip():
             messagebox.showwarning(
                 self._tr("Open document"),
@@ -995,15 +1032,16 @@ class App(tk.Tk):
                 ),
                 parent=self,
             )
+            waiting.close()
             return
-        if not self._confirm_discard():
-            return
+
         self.library.clear()
         unique_count = self.library.replace_text(text)
         if not unique_count:
             messagebox.showwarning(
                 self._tr("Scan document"), self._tr("No words found in the text."), parent=self
             )
+            waiting.close()
             return
         self.source_path = path
         self.current_tab = "all"
@@ -1016,6 +1054,7 @@ class App(tk.Tk):
             name=os.path.basename(path), unique=unique_count,
             occurrences=sum(self.library.counts.values()),
         ))
+        waiting.close()
 
     def rescan_text(self):
         text = self.text.get("1.0", "end-1c")
