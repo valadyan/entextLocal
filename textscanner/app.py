@@ -367,12 +367,12 @@ class App(tk.Tk):
         actions.pack(fill=tk.X)
 
         self.learn_button = ttk.Button(
-            actions, text=self._tr("Mark learned"), command=self.learn_selected
+            actions, text=self._tr("I know"), command=self.learn_selected
         )
         self.learn_button.pack(side=tk.LEFT)
 
         self.return_button = ttk.Button(
-            actions, text=self._tr("Move to learn"), command=self.unlearn_selected
+            actions, text=self._tr("Move back"), command=self.unlearn_selected
         )
         self.remove_button = ttk.Button(
             actions, text=self._tr("Remove"), style="Danger.TButton",
@@ -504,7 +504,7 @@ class App(tk.Tk):
         for index, (word, count) in enumerate(entries):
             translation = translations.get(word, "")
             action = self._tr(
-                "Move to learn" if self.current_tab == "learned" else "Mark learned"
+                "Move back" if self.current_tab == "learned" else "I know"
             )
             tags = ["odd" if index % 2 else "even"]
             if not translation:
@@ -717,6 +717,14 @@ class App(tk.Tk):
         text.focus_set()
         set_titlebar_color(window, self.palette["card"], dark=self.theme_name == "dark")
 
+        """Resize window to fit contents and center over parent."""
+        window.update_idletasks()
+        req_w = max(150, window.winfo_reqwidth())
+        req_h = max(100, window.winfo_reqheight())
+        x = self.winfo_rootx() + (self.winfo_width() - req_w) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - req_h) // 2
+        window.geometry(f"{req_w}x{req_h}+{x}+{y}")
+
     def _show_app_info(self):
         window = tk.Toplevel(self)
         window.title(self._tr("Info"))
@@ -761,6 +769,14 @@ class App(tk.Tk):
         window.bind("<Escape>", lambda event: window.destroy())
         text.focus_set()
         set_titlebar_color(window, self.palette["card"], dark=self.theme_name == "dark")
+                
+        """Resize window to fit contents and center over parent."""
+        window.update_idletasks()
+        req_w = max(150, window.winfo_reqwidth())
+        req_h = max(100, window.winfo_reqheight())
+        x = self.winfo_rootx() + (self.winfo_width() - req_w) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - req_h) // 2
+        window.geometry(f"{req_w}x{req_h}+{x}+{y}")
 
     def _on_tree_motion(self, event):
         if event.state & 0x0100:
